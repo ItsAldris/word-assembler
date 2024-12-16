@@ -18,7 +18,7 @@
     <item row="0" column="0">
      <widget class="QStackedWidget" name="stackedWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="page">
        <layout class="QGridLayout" name="gridLayout_3">
@@ -26,28 +26,28 @@
          <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,0">
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="33,10,10">
+            <property name="spacing">
+             <number>0</number>
+            </property>
             <item>
-             <widget class="QLineEdit" name="lineEdit">
+             <widget class="QLineEdit" name="addressLineEdit">
               <property name="text">
                <string>localhost</string>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QDoubleSpinBox" name="doubleSpinBox">
-              <property name="decimals">
-               <number>0</number>
-              </property>
+             <widget class="QSpinBox" name="portSpinBox">
               <property name="maximum">
-               <double>6600.000000000000000</double>
+               <number>66000</number>
               </property>
               <property name="value">
-               <double>2000.000000000000000</double>
+               <number>2000</number>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="pushButton">
+             <widget class="QPushButton" name="connectButton">
               <property name="text">
                <string>connect</string>
               </property>
@@ -75,14 +75,17 @@
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="26,6">
             <item>
-             <widget class="QLineEdit" name="lineEdit_2">
+             <widget class="QLineEdit" name="usernameLineEdit">
               <property name="text">
+               <string/>
+              </property>
+              <property name="placeholderText">
                <string>username</string>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="pushButton_3">
+             <widget class="QPushButton" name="acceptButton">
               <property name="text">
                <string>accept</string>
               </property>
@@ -101,17 +104,24 @@
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_6" stretch="33,10,10">
             <item>
-             <widget class="QLineEdit" name="lineEdit_3">
+             <widget class="QLineEdit" name="lettersLineEdit">
               <property name="text">
+               <string/>
+              </property>
+              <property name="placeholderText">
                <string>letters</string>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QLCDNumber" name="lcdNumber"/>
+             <widget class="QLCDNumber" name="lcdNumber">
+              <property name="value" stdset="0">
+               <double>30.000000000000000</double>
+              </property>
+             </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="pushButton_2">
+             <widget class="QPushButton" name="disconnectButton">
               <property name="text">
                <string>disconnect</string>
               </property>
@@ -125,21 +135,24 @@
              <widget class="QPlainTextEdit" name="plainTextEdit_2"/>
             </item>
             <item>
-             <widget class="QPlainTextEdit" name="plainTextEdit_3"/>
+             <widget class="QPlainTextEdit" name="statsPlainTextEdit"/>
             </item>
            </layout>
           </item>
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_8" stretch="26,6">
             <item>
-             <widget class="QLineEdit" name="lineEdit_4">
+             <widget class="QLineEdit" name="wordLineEdit">
               <property name="text">
+               <string/>
+              </property>
+              <property name="placeholderText">
                <string>word</string>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="pushButton_4">
+             <widget class="QPushButton" name="acceptButton_1">
               <property name="text">
                <string>accept</string>
               </property>
