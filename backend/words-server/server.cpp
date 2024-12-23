@@ -17,6 +17,7 @@
 #include <functional>
 #include <mutex>
 #include <atomic>
+#include <random>
 
 // We're planning to use poll for this project (and threads for timer), working on it
 
@@ -32,6 +33,7 @@ std::atomic_bool stopTimer = false;
 char *buffer[SIZE];
 bool isGameRunning = false;
 bool isRoundRunning = false;
+std::default_random_engine gen(std::random_device{}());
 
 // Those will be put in a configuration file later (hopefully)
 int numOfRounds = 3; // Rounds in a single game
@@ -52,11 +54,11 @@ void gameLoop();
 
 void waitForPlayers(int waitDuration);
 
-void gameStart(int rounds);
+void gameStart(int rounds, int roundDuration);
 
 void roundStart(int roundDuration);
 
-char * generateLetters();
+std::string generateLetters(int letterCount);
 
 int checkIfCorrectWord(char *word);
 
@@ -174,7 +176,7 @@ void gameLoop()
     while(1)
     {
         waitForPlayers(waitForPlayersTime);
-        gameStart(numOfRounds);
+        gameStart(numOfRounds, roundTime);
         break;
     }
 }
@@ -259,34 +261,45 @@ void waitForPlayers(int waitDuration)
 
 // TODO
 // The game begins
-void gameStart(int rounds)
+void gameStart(int rounds, int roundDuration)
 {
     printf("Starting the game...\n");
     // Start a game consisting of as many rounds as specified
     // At the end of the game reset all scores
     // Allow players to join only before the game starts or after it ends
-    while(1);
+    roundStart(roundDuration);
 }
 
 // TODO
 // The round begins
 void roundStart(int roundDuration)
 {
-    printf("Starting the round...\n");
+    printf("Starting a new round...\n");
     // Generate a random sequence of letters and send it to all players
     // Wait for players to send their words or until the time runs out
     // Assign the scores to players
     // Check if there are still enough players in game 
     // -> if not then go back to waitForPlayers and then start a new game
+    std::string letters = generateLetters(letterCount);
+    std::cout << "Letters: " + letters + "\n";
+    while(1);
 }
 
 // TODO
 // Generates a string made from random letters
-char * generateLetters(int letterCount)
+std::string generateLetters(int letterCount)
 {
+    std::string picked = "";
+    std::string letters = "abcdefghijklmnoprstuwyz";
     printf("Generating letters...\n");
-    char *letters = (char *)"aguhjsk";
-    return letters;
+    for (int i = 0; i < letterCount; i++)
+    {
+        std::uniform_int_distribution<int> dist(0, letters.length()-1);
+        int index = dist(gen);
+        picked += letters.at(index);
+        letters.erase(index, 1);
+    }
+    return picked;
 }
 
 // TODO
