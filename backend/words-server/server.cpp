@@ -17,10 +17,19 @@
 #include <functional>
 #include <mutex>
 #include <atomic>
+#include <set>
 
-// We're planning to use poll for this project (and threads for timer), working on it
+// We're planning to use poll for this project (and threads for timer), still working on it
 
 #define SIZE 255 // buffer size
+#define NICK_SIZE 30
+
+struct Player
+{
+    int fd;
+    char *nickname;
+    bool inGame;
+};
 
 int serverFd;
 int maxDescrCount = 16;
@@ -29,9 +38,10 @@ pollfd * pollFds;
 std::mutex mtx;
 int pollTimeout = -1;
 std::atomic_bool stopTimer = false;
-char *buffer[SIZE];
+char buffer[SIZE];
 bool isGameRunning = false;
 bool isRoundRunning = false;
+std::set<Player *> players;
 
 // Those will be put in a configuration file later (hopefully)
 int numOfRounds = 3; // Rounds in a single game
@@ -52,7 +62,7 @@ void gameLoop();
 
 void waitForPlayers(int waitDuration);
 
-void gameStart(int rounds);
+void gameStart(int rounds, int roundDuration);
 
 void roundStart(int roundDuration);
 
@@ -65,6 +75,16 @@ void sentToAllPlaying();
 void newServerEvent(int revents);
 
 void newClientEvent(int clientId);
+
+void calculateScore(int clientId);
+
+void resetScore(int clientId);
+
+bool checkNickname(char *nickname);
+
+Player *findPlayer(char *nickname);
+
+Player *findPlayer(int playerFd);
 
 
 int main(int argc, char* argv[])
@@ -145,10 +165,15 @@ short getPort(char * port)
 void serverShutdown(int)
 {
     // Shutdown and close all client sockets
-    // TODO
+    for (int i = 1; i < descrCount; i++)
+    {
+        shutdown(pollFds[i].fd, SHUT_RDWR);
+        close(pollFds[i].fd);
+        printf("Disconnecting with client %d...\n", i);
+    }
     // Close server socket and exit the program
     close(serverFd);
-    printf("\nShutting down...\n");
+    printf("Shutting down...\n");
     exit(0);
 }
 
@@ -174,7 +199,7 @@ void gameLoop()
     while(1)
     {
         waitForPlayers(waitForPlayersTime);
-        gameStart(numOfRounds);
+        gameStart(numOfRounds, roundTime);
         break;
     }
 }
@@ -241,13 +266,13 @@ void waitForPlayers(int waitDuration)
             {
                 if (pollFds[i].revents)
                 {
-                    if(pollFds[i].fd == serverFd)
+                    if (pollFds[i].fd == serverFd)
                     {
                         newServerEvent(pollFds[i].revents); // Accept new connection
                     }
-                    else
+                    else if (pollFds[i].revents & POLLRDHUP) // Only handle disconnection from clients
                     {
-                        newClientEvent(i); // Some client event (like disconnection)
+                        newClientEvent(i);
                     }
                     ready--;
                 }
@@ -259,12 +284,16 @@ void waitForPlayers(int waitDuration)
 
 // TODO
 // The game begins
-void gameStart(int rounds)
+void gameStart(int rounds, int roundDuration)
 {
     printf("Starting the game...\n");
     // Start a game consisting of as many rounds as specified
     // At the end of the game reset all scores
     // Allow players to join only before the game starts or after it ends
+    for (int i = 0; i < rounds; i++)
+    {
+        roundStart(roundDuration);
+    }
     while(1);
 }
 
@@ -302,7 +331,7 @@ int checkIfCorrectWord(char *word)
     return 0;
 }
 
-// TODO -> add reading nickname
+// TODO
 // Handle the event that occured on serverFd
 void newServerEvent(int revents)
 {
@@ -317,15 +346,34 @@ void newServerEvent(int revents)
         {
             error(0, errno, "Error when receiving new connection from client");
         }
+
+        // TODO
+        // Check nickname
+        char nick[NICK_SIZE];
+        memset(nick, 0, NICK_SIZE);
+        int r = read(clientFd, nick, NICK_SIZE);
+        nick[strlen(nick)-1] = '\0';
+        if (!checkNickname(nick)) 
+        {
+            char message[] = "Invalid nickname or it already exists!\n";
+            write(clientFd, message, sizeof(message));
+            shutdown(clientFd, SHUT_RDWR);
+            close(clientFd);
+            return;
+        }
         
         // TODO
         // Add resizable pollFds
+
+        Player newPlayer = {.fd = clientFd, .nickname = nick, .inGame = false};
+        players.insert(&newPlayer);
         
         pollFds[descrCount].fd = clientFd;
         pollFds[descrCount].events = POLLIN|POLLRDHUP;
         descrCount++;
+
         
-        printf("New player connected: %s on port %d\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
+        printf("New player connected: %s from %s on port %d\n", nick, inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
     }
     else
     {
@@ -347,6 +395,40 @@ void newClientEvent(int clientId)
         close(clientFd);
         pollFds[clientId] = pollFds[descrCount-1];
         descrCount--;
+        players.erase(findPlayer(clientFd));
         printf("Player disconnected\n");
     }
+}
+
+// TODO
+bool checkNickname(char *nickname)
+{
+    if (findPlayer(nickname) != nullptr)
+        return false;
+    return true;
+}
+
+Player *findPlayer(char *nickname)
+{
+    for (auto player : players)
+    {
+        printf("%s\n", player->nickname);
+        if (strcmp(player->nickname, nickname) == 0)
+        {
+            return player;
+        }
+    }
+    return nullptr;
+}
+
+Player *findPlayer(int playerFd)
+{
+    for (auto player : players)
+    {
+        if (player->fd == playerFd)
+        {
+            return player;
+        }
+    }
+    return nullptr;
 }
