@@ -16,18 +16,18 @@
 #include <chrono>
 #include <functional>
 #include <mutex>
-#include <condition_variable>
 
 // We're planning to use poll for this project, working on it
-// There are issues with waitForPlayers: the game does not start after the countdown reaches 0
-// Tried mutex and cv but didn't work either
+
+#define SIZE 255 // buffer size
 
 int serverFd;
 int maxDescrCount = 16;
 int descrCount = 0;
 pollfd * pollFds;
 std::mutex mtx;
-std::condition_variable cv;
+int pollTimeout = -1;
+char *buffer[SIZE];
 
 // Those will be put in a configuration file later (hopefully)
 int numOfRounds = 3; // Rounds in a single game
@@ -36,7 +36,7 @@ int bonusPoints = 5; // Bonus for being first
 int negativePoints = -10; // Points for providing incorrect answer
 int waitForPlayersTime = 10; // How long the server waits for more players to join
 int roundTime = 60; // How long one round lasts
-int letterCount = 7; // The number of letters generated in one round
+int letterCount = 7; // The number of letters chosen in one round
 
 short getPort(char * port);
 
@@ -61,6 +61,8 @@ void sentToAllPlaying();
 void newServerEvent(int revents);
 
 void newClientEvent(int clientId);
+
+int newStdinEvent(int revents);
 
 
 int main(int argc, char* argv[])
@@ -110,13 +112,16 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
+    // *****************************************
+
     // Setup data for poll and add server socket
     pollFds = (pollfd *) malloc(sizeof(pollfd) * maxDescrCount);
     pollFds[0].fd = serverFd;
     pollFds[0].events = POLLIN;
     descrCount++;
 
-    // *****************************************
+    // Clear the buffer
+    memset(buffer, 0, SIZE);
 
     // Begin the game logic
     gameLoop();
@@ -170,11 +175,10 @@ void countdown(int seconds, std::function<void(int)> onTick)
 {
     while (seconds > 0) 
     {
-        onTick(seconds); 
+        onTick(seconds-1); 
         std::this_thread::sleep_for(std::chrono::seconds(1));
         --seconds;
     }
-    onTick(seconds);
 }
 
 // TODO
@@ -197,7 +201,7 @@ void waitForPlayers(int waitDuration)
 {
     printf("Waiting for players...\n");
 
-    int countdownLeft = 0;
+    int countdownLeft = waitDuration;
     int countdownOn = false;
 
     // Countdown callback setup
@@ -213,26 +217,27 @@ void waitForPlayers(int waitDuration)
     std::thread countDownT;
     while (1)
     {
+        // Begin the countdown when at least 2 players are connected
+        if (descrCount > 2 && !countdownOn) 
+        {
+            countDownT = std::thread(countdown, waitDuration, onTick);
+            countdownOn = true;
+            pollTimeout = 0;
+        }
         // Check if there are at least 2 players and start the game
-        if (countdownOn && countdownLeft == 0 && descrCount > 2)
+        else if (countdownOn && countdownLeft == 0 && descrCount > 2)
         {
             countdownOn = false;
             countDownT.join();
             printf("Done waiting!\n");
             gameStart(numOfRounds);
         }
-        // If more than 2 players begin the countdown
-        else if (descrCount > 2 && !countdownOn) 
-        {
-            // Begin the countdown when at least 2 players are connected
-            countDownT = std::thread(countdown, waitDuration, onTick);
-            countdownOn = true;
-        }
+        
         // Still waiting for players
-        else if (countdownOn == 0 || countdownLeft > 0)
+        else
         {
             // Poll
-            int ready = poll(pollFds, descrCount, -1);
+            int ready = poll(pollFds, descrCount, pollTimeout);
             if (ready == -1)
             {
                 error(0, errno, "Poll failure");
@@ -340,4 +345,18 @@ void newServerEvent(int revents)
 void newClientEvent(int clientId)
 {
 
+}
+
+// TODO
+int newStdinEvent(int revents)
+{
+    if (revents & POLLIN)
+    {
+        int r = read(0, buffer, SIZE);
+        if (r == 1 && strcmp(buffer[0], "0") == 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
 }
