@@ -16,8 +16,9 @@
 #include <chrono>
 #include <functional>
 #include <mutex>
+#include <atomic>
 
-// We're planning to use poll for this project, working on it
+// We're planning to use poll for this project (and threads for timer), working on it
 
 #define SIZE 255 // buffer size
 
@@ -27,7 +28,10 @@ int descrCount = 0;
 pollfd * pollFds;
 std::mutex mtx;
 int pollTimeout = -1;
+std::atomic_bool stopTimer = false;
 char *buffer[SIZE];
+bool isGameRunning = false;
+bool isRoundRunning = false;
 
 // Those will be put in a configuration file later (hopefully)
 int numOfRounds = 3; // Rounds in a single game
@@ -61,8 +65,6 @@ void sentToAllPlaying();
 void newServerEvent(int revents);
 
 void newClientEvent(int clientId);
-
-int newStdinEvent(int revents);
 
 
 int main(int argc, char* argv[])
@@ -126,26 +128,6 @@ int main(int argc, char* argv[])
     // Begin the game logic
     gameLoop();
 
-
-    // THIS IS UNIMPORTANT, DON'T LOOK
-
-    // sockaddr_in c_addr;
-    // socklen_t c_addr_size = sizeof(c_addr);
-    
-    // memset(&c_addr, 0, c_addr_size);
-    // int c = accept(serverFd, (sockaddr *) &c_addr, &c_addr_size);
-
-    // char buffor[20];
-    // while(1)
-    // {
-    //     int message = read(0, buffor, sizeof(buffor));
-    //     if (c != -1)
-    //     {
-    //         int w = write(c, buffor, message);
-    //     }
-    // }
-    // close(c);
-
     return 0;    
 }
 
@@ -175,6 +157,7 @@ void countdown(int seconds, std::function<void(int)> onTick)
 {
     while (seconds > 0) 
     {
+        if (stopTimer) { return; }
         onTick(seconds-1); 
         std::this_thread::sleep_for(std::chrono::seconds(1));
         --seconds;
@@ -191,6 +174,7 @@ void gameLoop()
     while(1)
     {
         waitForPlayers(waitForPlayersTime);
+        gameStart(numOfRounds);
         break;
     }
 }
@@ -230,9 +214,18 @@ void waitForPlayers(int waitDuration)
             countdownOn = false;
             countDownT.join();
             printf("Done waiting!\n");
-            gameStart(numOfRounds);
+            return;
         }
-        
+        // Someone disconnected before countdown finished
+        else if (countdownOn && descrCount <= 2)
+        {
+            stopTimer = true;
+            countDownT.join();
+            stopTimer = false;
+            countdownOn = false;
+            pollTimeout = -1;
+            printf("Not enough players, waiting again...\n");
+        }
         // Still waiting for players
         else
         {
@@ -309,7 +302,7 @@ int checkIfCorrectWord(char *word)
     return 0;
 }
 
-// TODO
+// TODO -> add reading nickname
 // Handle the event that occured on serverFd
 void newServerEvent(int revents)
 {
@@ -344,19 +337,16 @@ void newServerEvent(int revents)
 // TODO
 void newClientEvent(int clientId)
 {
-
-}
-
-// TODO
-int newStdinEvent(int revents)
-{
-    if (revents & POLLIN)
+    int clientFd = pollFds[clientId].fd;
+    int revents = pollFds[clientId].revents;
+    
+    if (revents & POLLRDHUP)
     {
-        int r = read(0, buffer, SIZE);
-        if (r == 1 && strcmp(buffer[0], "0") == 0)
-        {
-            return -1;
-        }
+        // Client disconnected
+        shutdown(clientFd, SHUT_RDWR);
+        close(clientFd);
+        pollFds[clientId] = pollFds[descrCount-1];
+        descrCount--;
+        printf("Player disconnected\n");
     }
-    return 0;
 }
