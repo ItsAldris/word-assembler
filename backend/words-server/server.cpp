@@ -20,8 +20,11 @@
 #include <mutex>
 #include <atomic>
 #include <random>
+#include <condition_variable>
 
 // We're planning to use poll and threads, working on it
+// Program doesn't end correctly if pressed Ctrl+C during countdown (but it ends anyway so that's good)
+// (by ends anyway I mean it just kinda has a stroke and dies but it's okay)
 
 #define SIZE 255 // buffer size
 
@@ -33,7 +36,12 @@ std::mutex mtx;
 bool isGameRunning = false;
 bool isRoundRunning = false;
 std::atomic_bool stopTimer = false;
+std::atomic_bool countdownOn = false;
 std::default_random_engine gen(std::random_device{}());
+std::condition_variable cv;
+
+std::thread gameLoopT;
+std::thread countDownT;
 
 // Structures
 std::unordered_map<int,std::string> players;
@@ -47,7 +55,7 @@ int basePoints = 10; // Points for correct word
 int bonusPoints = 5; // Bonus for being first
 int negativePoints = -10; // Points for providing incorrect answer
 int waitForPlayersTime = 10; // How long the server waits for more players to join
-int roundTime = 60; // How long one round lasts
+int roundTime = 10; // How long one round lasts
 int letterCount = 10; // The number of letters chosen in one round
 
 short getPort(char * port);
@@ -137,8 +145,7 @@ int main(int argc, char* argv[])
     descrCount++;
 
     // Begin the game logic
-    std::thread gameLoopT(gameLoop);
-    gameLoopT.detach();
+    gameLoopT = std::thread(gameLoop);
 
     // Wait for events
     while(1)
@@ -183,6 +190,9 @@ short getPort(char * port)
 
 void serverShutdown(int)
 {
+    stopTimer = true;
+    countdownOn = false;
+
     // Shutdown and close all client sockets
     for (int i = 1; i < descrCount; i++)
     {
@@ -191,7 +201,19 @@ void serverShutdown(int)
         printf("Disconnecting with client %d...\n", i);
     }
     // Close server socket and exit the program
+    free(pollFds);
     close(serverFd);
+
+    if (gameLoopT.joinable())
+    {
+        gameLoopT.join();
+    }
+
+    if (countDownT.joinable())
+    {
+        countDownT.join();
+    }
+
     printf("Shutting down...\n");
     exit(0);
 }
@@ -239,11 +261,9 @@ void gameLoop()
                 break;
             }
         }
-        // TODO: Clear scores
         isGameRunning = false;
         scores.clear();
         inGame.clear();
-        break;
     }
 }
 
@@ -254,7 +274,7 @@ void waitForPlayers()
     printf("Waiting for players...\n");
 
     int countdownLeft = waitForPlayersTime;
-    int countdownOn = false;
+    countdownOn = false;
 
     // Countdown callback setup
     auto onTick = [&countdownLeft](int timeLeft) 
@@ -266,7 +286,6 @@ void waitForPlayers()
         }
     };
 
-    std::thread countDownT;
     while (1)
     {
         // Begin the countdown when at least 2 players are connected
@@ -300,14 +319,52 @@ void waitForPlayers()
 void roundStart()
 {
     printf("Starting the round...\n");
+    isRoundRunning = true;
     // Generate a random sequence of letters and send it to all players
     // Wait for players to send their words or until the time runs out
     // Assign the scores to players
-    // Check if there are still enough players in game 
-    // -> if not then go back to waitForPlayers and then start a new game
     std::string letters = generateLetters();
     sendToAllPlaying(letters);
+    int countdownLeft = roundTime;
+    stopTimer = false;
 
+    // Countdown callback setup
+    auto onTick = [&countdownLeft](int timeLeft) 
+    {
+        {
+            printf("Time until round ends: %d\n", timeLeft);
+            std::unique_lock<std::mutex> lock(mtx);
+            countdownLeft = timeLeft;
+        }
+        if (timeLeft == 0)
+        {
+            stopTimer = true;
+            cv.notify_all();
+        }
+    };
+
+    countDownT = std::thread(countdown, roundTime, onTick);
+    countdownOn = true;
+
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [&]() { return stopTimer || words.size() == inGame.size(); });
+    }
+    
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        if (!stopTimer)
+        {
+            stopTimer = true;
+        }
+    }
+
+    countdownOn = false;
+    countDownT.join();
+    stopTimer = false;
+    isRoundRunning = false;
+
+    printf("Round ended!\n");
 }
 
 // TODO
@@ -344,7 +401,7 @@ bool checkIfCorrectWord(char *word)
     return 0;
 }
 
-// TODO -> add reading nickname
+// TODO
 // Handle the event that occured on serverFd
 void handleServerEvent(int revents)
 {
@@ -393,8 +450,9 @@ void handleClientEvent(int clientId)
         if (players.find(clientFd) == players.end())
         {
             // Obtain player nickname
-            std::thread nicknameT(getNickname, clientFd);
-            nicknameT.detach();
+            // std::thread nicknameT(getNickname, clientFd);
+            // nicknameT.detach();
+            getNickname(clientFd);
         }
         // Player sent a word during current round
         else if (isRoundRunning && inGame.find(clientFd) != inGame.end())
@@ -417,7 +475,7 @@ void getNickname(int clientFd)
         if (r > 0)
         {
             nick = buffer;
-            printf("%s\n", nick.c_str());
+            //printf("%s\n", nick.c_str());
             // Nickname was already picked
             if (std::any_of(players.begin(), players.end(), [&](const auto& pair) { return pair.second == nick; }))
             {
@@ -435,7 +493,7 @@ void getNickname(int clientFd)
                 return;
             }
         }
-        // else
+        // else if (r == -1)
         // {
         //     removeClient(clientFd);
         // }
