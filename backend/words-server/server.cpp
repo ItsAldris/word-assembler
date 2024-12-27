@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -9,6 +10,7 @@
 #include <netdb.h>
 #include <poll.h> 
 #include <unordered_set>
+#include <unordered_map>
 #include <signal.h>
 #include <string.h>
 #include <iostream>
@@ -17,8 +19,9 @@
 #include <functional>
 #include <mutex>
 #include <atomic>
+#include <random>
 
-// We're planning to use poll for this project (and threads for timer), working on it
+// We're planning to use poll and threads, working on it
 
 #define SIZE 255 // buffer size
 
@@ -27,11 +30,16 @@ int maxDescrCount = 16;
 int descrCount = 0;
 pollfd * pollFds;
 std::mutex mtx;
-int pollTimeout = -1;
-std::atomic_bool stopTimer = false;
-char *buffer[SIZE];
 bool isGameRunning = false;
 bool isRoundRunning = false;
+std::atomic_bool stopTimer = false;
+std::default_random_engine gen(std::random_device{}());
+
+// Structures
+std::unordered_map<int,std::string> players;
+std::unordered_map<std::string,int> scores;
+std::unordered_map<std::string,int> words;
+std::unordered_set<int> inGame;
 
 // Those will be put in a configuration file later (hopefully)
 int numOfRounds = 3; // Rounds in a single game
@@ -40,7 +48,7 @@ int bonusPoints = 5; // Bonus for being first
 int negativePoints = -10; // Points for providing incorrect answer
 int waitForPlayersTime = 10; // How long the server waits for more players to join
 int roundTime = 60; // How long one round lasts
-int letterCount = 7; // The number of letters chosen in one round
+int letterCount = 10; // The number of letters chosen in one round
 
 short getPort(char * port);
 
@@ -50,21 +58,27 @@ void countdown(int seconds, std::function<void(int)> onTick);
 
 void gameLoop();
 
-void waitForPlayers(int waitDuration);
+void waitForPlayers();
 
-void gameStart(int rounds);
+void roundStart();
 
-void roundStart(int roundDuration);
+std::string generateLetters();
 
-char * generateLetters();
+int checkIfCorrectWord(std::string word);
 
-int checkIfCorrectWord(char *word);
+void sendToAllPlaying(std::string message);
 
-void sentToAllPlaying();
+void handleServerEvent(int revents);
 
-void newServerEvent(int revents);
+void handleClientEvent(int clientDescr);
 
-void newClientEvent(int clientId);
+void handleInput(int clientFd);
+
+void getNickname(int clientFd);
+
+void waitingRoom();
+
+void removeClient(int clientId);
 
 
 int main(int argc, char* argv[])
@@ -122,11 +136,36 @@ int main(int argc, char* argv[])
     pollFds[0].events = POLLIN;
     descrCount++;
 
-    // Clear the buffer
-    memset(buffer, 0, SIZE);
-
     // Begin the game logic
-    gameLoop();
+    std::thread gameLoopT(gameLoop);
+    gameLoopT.detach();
+
+    // Wait for events
+    while(1)
+    {
+        int ready = poll(pollFds, descrCount, -1);
+        if (ready == -1)
+        {
+            error(0, errno, "Poll failure");
+            serverShutdown(SIGINT);
+        }
+
+        for (int i = 0; i < descrCount && ready > 0; ++i)
+        {
+            if (pollFds[i].revents)
+            {
+                if(pollFds[i].fd == serverFd)
+                {
+                    handleServerEvent(pollFds[i].revents); // Accept new connection
+                }
+                else
+                {
+                    handleClientEvent(i); // Some client event
+                }
+                ready--;
+            }
+        }
+    }
 
     return 0;    
 }
@@ -145,10 +184,15 @@ short getPort(char * port)
 void serverShutdown(int)
 {
     // Shutdown and close all client sockets
-    // TODO
+    for (int i = 1; i < descrCount; i++)
+    {
+        shutdown(pollFds[i].fd, SHUT_RDWR);
+        close(pollFds[i].fd);
+        printf("Disconnecting with client %d...\n", i);
+    }
     // Close server socket and exit the program
     close(serverFd);
-    printf("\nShutting down...\n");
+    printf("Shutting down...\n");
     exit(0);
 }
 
@@ -173,19 +217,43 @@ void gameLoop()
     // The loop in question
     while(1)
     {
-        waitForPlayers(waitForPlayersTime);
-        gameStart(numOfRounds);
+        waitForPlayers();
+        // Add all players to the game
+        for (auto player : players)
+        {
+            if (inGame.find(player.first) == inGame.end())
+            {
+                inGame.insert(player.first);
+            }
+        }
+
+        // Start the game
+        isGameRunning = true;
+        for (int i = 0; i < numOfRounds; i++)
+        {
+            roundStart();
+            // TODO: Check if still enough players in game
+            if (inGame.size() < 2)
+            {
+                printf("Not enough players to continue the game.\n");
+                break;
+            }
+        }
+        // TODO: Clear scores
+        isGameRunning = false;
+        scores.clear();
+        inGame.clear();
         break;
     }
 }
 
 // TODO
 // Called when there are too few players to start the game
-void waitForPlayers(int waitDuration)
+void waitForPlayers()
 {
     printf("Waiting for players...\n");
 
-    int countdownLeft = waitDuration;
+    int countdownLeft = waitForPlayersTime;
     int countdownOn = false;
 
     // Countdown callback setup
@@ -202,14 +270,13 @@ void waitForPlayers(int waitDuration)
     while (1)
     {
         // Begin the countdown when at least 2 players are connected
-        if (descrCount > 2 && !countdownOn) 
+        if (players.size() >= 2 && !countdownOn) 
         {
-            countDownT = std::thread(countdown, waitDuration, onTick);
+            countDownT = std::thread(countdown, waitForPlayersTime, onTick);
             countdownOn = true;
-            pollTimeout = 0;
         }
         // Check if there are at least 2 players and start the game
-        else if (countdownOn && countdownLeft == 0 && descrCount > 2)
+        else if (countdownOn && countdownLeft == 0 && players.size() >= 2)
         {
             countdownOn = false;
             countDownT.join();
@@ -217,60 +284,20 @@ void waitForPlayers(int waitDuration)
             return;
         }
         // Someone disconnected before countdown finished
-        else if (countdownOn && descrCount <= 2)
+        else if (countdownOn && players.size() < 2)
         {
             stopTimer = true;
             countDownT.join();
             stopTimer = false;
             countdownOn = false;
-            pollTimeout = -1;
             printf("Not enough players, waiting again...\n");
-        }
-        // Still waiting for players
-        else
-        {
-            // Poll
-            int ready = poll(pollFds, descrCount, pollTimeout);
-            if (ready == -1)
-            {
-                error(0, errno, "Poll failure");
-                serverShutdown(SIGINT);
-            }
-
-            for (int i = 0; i < descrCount && ready > 0; ++i)
-            {
-                if (pollFds[i].revents)
-                {
-                    if(pollFds[i].fd == serverFd)
-                    {
-                        newServerEvent(pollFds[i].revents); // Accept new connection
-                    }
-                    else
-                    {
-                        newClientEvent(i); // Some client event (like disconnection)
-                    }
-                    ready--;
-                }
-            }
-            
         }
     }
 }
 
 // TODO
-// The game begins
-void gameStart(int rounds)
-{
-    printf("Starting the game...\n");
-    // Start a game consisting of as many rounds as specified
-    // At the end of the game reset all scores
-    // Allow players to join only before the game starts or after it ends
-    while(1);
-}
-
-// TODO
 // The round begins
-void roundStart(int roundDuration)
+void roundStart()
 {
     printf("Starting the round...\n");
     // Generate a random sequence of letters and send it to all players
@@ -278,33 +305,48 @@ void roundStart(int roundDuration)
     // Assign the scores to players
     // Check if there are still enough players in game 
     // -> if not then go back to waitForPlayers and then start a new game
+    std::string letters = generateLetters();
+    sendToAllPlaying(letters);
+
 }
 
 // TODO
 // Generates a string made from random letters
-char * generateLetters(int letterCount)
+std::string generateLetters()
 {
+    std::string picked = "";
+    std::string letters = "abcdefghijklmnoprstuwyz";
     printf("Generating letters...\n");
-    char *letters = (char *)"aguhjsk";
-    return letters;
+    for (int i = 0; i < letterCount; i++)
+    {
+        std::uniform_int_distribution<int> dist(0, letters.length()-1);
+        int index = dist(gen);
+        picked += letters.at(index);
+        letters.erase(index, 1);
+    }
+    return picked;
 }
 
 // TODO
-void sentToAllPlaying()
+void sendToAllPlaying(std::string message)
 {
-
+    message += '\n';
+    for (auto playing : inGame)
+    {
+        write(playing, message.c_str(), message.size());
+    }
 }
 
 // TODO
 // Checks if the word provided by the player is a valid one
-int checkIfCorrectWord(char *word)
+bool checkIfCorrectWord(char *word)
 {
     return 0;
 }
 
 // TODO -> add reading nickname
 // Handle the event that occured on serverFd
-void newServerEvent(int revents)
+void handleServerEvent(int revents)
 {
     if (revents & POLLIN)
     {
@@ -335,7 +377,7 @@ void newServerEvent(int revents)
 }
 
 // TODO
-void newClientEvent(int clientId)
+void handleClientEvent(int clientId)
 {
     int clientFd = pollFds[clientId].fd;
     int revents = pollFds[clientId].revents;
@@ -343,10 +385,97 @@ void newClientEvent(int clientId)
     if (revents & POLLRDHUP)
     {
         // Client disconnected
-        shutdown(clientFd, SHUT_RDWR);
-        close(clientFd);
-        pollFds[clientId] = pollFds[descrCount-1];
-        descrCount--;
-        printf("Player disconnected\n");
+        removeClient(clientFd);
     }
+    else if (revents & POLLIN)
+    {
+        // New player
+        if (players.find(clientFd) == players.end())
+        {
+            // Obtain player nickname
+            std::thread nicknameT(getNickname, clientFd);
+            nicknameT.detach();
+        }
+        // Player sent a word during current round
+        else if (isRoundRunning && inGame.find(clientFd) != inGame.end())
+        {
+            handleInput(clientFd);
+        }
+    }
+}
+
+void getNickname(int clientFd)
+{
+    char buffer[SIZE];
+    std::string nick;
+
+    while(1)
+    {
+        memset(buffer, 0, SIZE);
+        int r = read(clientFd, buffer, SIZE);
+        buffer[strlen(buffer)-1] = '\0';
+        if (r > 0)
+        {
+            nick = buffer;
+            printf("%s\n", nick.c_str());
+            // Nickname was already picked
+            if (std::any_of(players.begin(), players.end(), [&](const auto& pair) { return pair.second == nick; }))
+            {
+                std::string message = "Provided nickname is already in use. Try again.\n";
+                write(clientFd, message.c_str(), message.size());
+            }
+            else
+            {
+                //nick[nick.length()-1] = '\0';
+                std::pair<int,std::string> player (clientFd, nick);
+                players.insert(player);
+                std::pair<std::string,int> score (nick, 0);
+                scores.insert(score);
+                printf("Hello, %s!\n", nick.c_str());
+                return;
+            }
+        }
+        // else
+        // {
+        //     removeClient(clientFd);
+        // }
+    }
+    
+}
+
+void handleInput(int clientFd)
+{
+
+}
+
+void removeClient(int clientFd)
+{
+    for (int i = 1; i < descrCount; i++)
+    {
+        if (pollFds[i].fd == clientFd)
+        {
+            pollFds[i] = pollFds[descrCount-1];
+            descrCount--;
+        }
+    }
+    shutdown(clientFd, SHUT_RDWR);
+    close(clientFd);
+    
+    // Clear structures
+    std::unordered_map<int,std::string>::const_iterator gotPlayer = players.find(clientFd);
+    if (gotPlayer != players.end())
+    {
+        std::unordered_map<std::string, int>::const_iterator gotScore = scores.find(players[clientFd]);
+        if (gotScore != scores.end())
+        {
+            scores.erase(players[clientFd]);
+        }
+        std::unordered_set<int>::const_iterator gotInGame = inGame.find(clientFd);
+        if (gotInGame != inGame.end())
+        {
+            inGame.erase(clientFd);
+        }
+        players.erase(clientFd);
+    }
+    printf("Player disconnected\n");
 }
