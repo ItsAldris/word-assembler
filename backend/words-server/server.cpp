@@ -21,6 +21,7 @@
 #include <atomic>
 #include <random>
 #include <condition_variable>
+#include <pthread.h>
 
 // We're planning to use poll and threads, working on it
 // Program doesn't end correctly if pressed Ctrl+C during countdown (but it ends anyway so that's good)
@@ -37,11 +38,13 @@ bool isGameRunning = false;
 bool isRoundRunning = false;
 std::atomic_bool stopTimer = false;
 std::atomic_bool countdownOn = false;
+std::atomic_bool gameEnd = false;
 std::default_random_engine gen(std::random_device{}());
 std::condition_variable cv;
 
 std::thread gameLoopT;
 std::thread countDownT;
+std::thread timerT;
 
 // Structures
 std::unordered_map<int,std::string> players;
@@ -87,6 +90,8 @@ void getNickname(int clientFd);
 void waitingRoom();
 
 void removeClient(int clientId);
+
+void handleStdInput(int revents);
 
 
 int main(int argc, char* argv[])
@@ -143,6 +148,9 @@ int main(int argc, char* argv[])
     pollFds[0].fd = serverFd;
     pollFds[0].events = POLLIN;
     descrCount++;
+    pollFds[1].fd = STDIN_FILENO;
+    pollFds[1].events = POLLIN;
+    descrCount++;
 
     // Begin the game logic
     gameLoopT = std::thread(gameLoop);
@@ -161,6 +169,10 @@ int main(int argc, char* argv[])
         {
             if (pollFds[i].revents)
             {
+                if(pollFds[i].fd == STDIN_FILENO)
+                {
+                    handleStdInput(pollFds[i].revents);
+                }
                 if(pollFds[i].fd == serverFd)
                 {
                     handleServerEvent(pollFds[i].revents); // Accept new connection
@@ -192,9 +204,27 @@ void serverShutdown(int)
 {
     stopTimer = true;
     countdownOn = false;
+    gameEnd = true;
+
+    cv.notify_all();
+
+    if (countDownT.joinable())
+    {
+        countDownT.join();
+    }
+
+    // if (timerT.joinable())
+    // {
+    //     timerT.join();
+    // }
+
+    if (gameLoopT.joinable())
+    {
+        gameLoopT.join();
+    }
 
     // Shutdown and close all client sockets
-    for (int i = 1; i < descrCount; i++)
+    for (int i = 2; i < descrCount; i++)
     {
         shutdown(pollFds[i].fd, SHUT_RDWR);
         close(pollFds[i].fd);
@@ -203,16 +233,6 @@ void serverShutdown(int)
     // Close server socket and exit the program
     free(pollFds);
     close(serverFd);
-
-    if (gameLoopT.joinable())
-    {
-        gameLoopT.join();
-    }
-
-    if (countDownT.joinable())
-    {
-        countDownT.join();
-    }
 
     printf("Shutting down...\n");
     exit(0);
@@ -228,6 +248,9 @@ void countdown(int seconds, std::function<void(int)> onTick)
         std::this_thread::sleep_for(std::chrono::seconds(1));
         --seconds;
     }
+    // std::unique_lock<std::mutex> lock(mtx);
+    countdownOn = false;
+    cv.notify_all();
 }
 
 // TODO
@@ -239,27 +262,25 @@ void gameLoop()
     // The loop in question
     while(1)
     {
+        if (gameEnd) { pthread_exit(nullptr); }
         waitForPlayers();
         // Add all players to the game
         for (auto player : players)
         {
-            if (inGame.find(player.first) == inGame.end())
-            {
-                inGame.insert(player.first);
-            }
+            inGame.insert(player.first);
         }
 
         // Start the game
         isGameRunning = true;
         for (int i = 0; i < numOfRounds; i++)
         {
-            roundStart();
             // TODO: Check if still enough players in game
             if (inGame.size() < 2)
             {
                 printf("Not enough players to continue the game.\n");
                 break;
             }
+            roundStart();
         }
         isGameRunning = false;
         scores.clear();
@@ -288,6 +309,16 @@ void waitForPlayers()
 
     while (1)
     {
+        if (gameEnd)
+        {
+            if (countdownOn)
+            {
+                stopTimer = true;
+                countdownOn = false;
+                countDownT.join();
+            }
+            pthread_exit(nullptr);
+        }
         // Begin the countdown when at least 2 players are connected
         if (players.size() >= 2 && !countdownOn) 
         {
@@ -318,6 +349,7 @@ void waitForPlayers()
 // The round begins
 void roundStart()
 {
+    if (gameEnd) { pthread_exit(nullptr); }
     printf("Starting the round...\n");
     isRoundRunning = true;
     // Generate a random sequence of letters and send it to all players
@@ -333,8 +365,8 @@ void roundStart()
     {
         {
             printf("Time until round ends: %d\n", timeLeft);
-            std::unique_lock<std::mutex> lock(mtx);
-            countdownLeft = timeLeft;
+            // std::unique_lock<std::mutex> lock(mtx);
+            // countdownLeft = timeLeft;
         }
         if (timeLeft == 0)
         {
@@ -343,16 +375,24 @@ void roundStart()
         }
     };
 
-    countDownT = std::thread(countdown, roundTime, onTick);
+    timerT = std::thread(countdown, roundTime, onTick);
     countdownOn = true;
 
     {
         std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [&]() { return stopTimer || words.size() == inGame.size(); });
+        cv.wait(lock, [&]() { return gameEnd || !countdownOn || words.size() == inGame.size(); });
+    }
+
+    if (gameEnd) 
+    {
+        stopTimer = true;
+        countdownOn = false;
+        timerT.join();
+        pthread_exit(nullptr);
     }
     
     {
-        std::unique_lock<std::mutex> lock(mtx);
+        //std::unique_lock<std::mutex> lock(mtx);
         if (!stopTimer)
         {
             stopTimer = true;
@@ -360,7 +400,7 @@ void roundStart()
     }
 
     countdownOn = false;
-    countDownT.join();
+    timerT.join();
     stopTimer = false;
     isRoundRunning = false;
 
@@ -490,6 +530,7 @@ void getNickname(int clientFd)
                 std::pair<std::string,int> score (nick, 0);
                 scores.insert(score);
                 printf("Hello, %s!\n", nick.c_str());
+                cv.notify_all();
                 return;
             }
         }
@@ -508,7 +549,7 @@ void handleInput(int clientFd)
 
 void removeClient(int clientFd)
 {
-    for (int i = 1; i < descrCount; i++)
+    for (int i = 2; i < descrCount; i++)
     {
         if (pollFds[i].fd == clientFd)
         {
@@ -535,5 +576,16 @@ void removeClient(int clientFd)
         }
         players.erase(clientFd);
     }
+    cv.notify_all();
     printf("Player disconnected\n");
+}
+
+void handleStdInput(int revents)
+{
+    if (revents & POLLIN)
+    {
+        char c;
+        int r = read(0, &c, 1);
+        if (c == 'q') { serverShutdown(SIGINT); }
+    }
 }
