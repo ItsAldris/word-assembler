@@ -24,8 +24,7 @@
 #include <pthread.h>
 
 // We're planning to use poll and threads, working on it
-// Program doesn't end correctly if pressed Ctrl+C during countdown (but it ends anyway so that's good)
-// (by ends anyway I mean it just kinda has a stroke and dies but it's okay)
+// Quit program with q+enter (ctrl+c should work too)
 
 #define SIZE 255 // buffer size
 
@@ -75,7 +74,7 @@ void roundStart();
 
 std::string generateLetters();
 
-int checkIfCorrectWord(std::string word);
+bool checkIfCorrectWord(std::string word);
 
 void sendToAllPlaying(std::string message);
 
@@ -143,7 +142,7 @@ int main(int argc, char* argv[])
 
     // *****************************************
 
-    // Setup data for poll and add server socket
+    // Setup data for poll and add server socket and stdin
     pollFds = (pollfd *) malloc(sizeof(pollfd) * maxDescrCount);
     pollFds[0].fd = serverFd;
     pollFds[0].events = POLLIN;
@@ -228,7 +227,7 @@ void serverShutdown(int)
     {
         shutdown(pollFds[i].fd, SHUT_RDWR);
         close(pollFds[i].fd);
-        printf("Disconnecting with client %d...\n", i);
+        printf("Disconnecting with player %d...\n", i-1);
     }
     // Close server socket and exit the program
     free(pollFds);
@@ -253,7 +252,6 @@ void countdown(int seconds, std::function<void(int)> onTick)
     cv.notify_all();
 }
 
-// TODO
 // Main loop of the game, all logic is handled here
 void gameLoop()
 {
@@ -274,7 +272,7 @@ void gameLoop()
         isGameRunning = true;
         for (int i = 0; i < numOfRounds; i++)
         {
-            // TODO: Check if still enough players in game
+            // Check if still enough players in game
             if (inGame.size() < 2)
             {
                 printf("Not enough players to continue the game.\n");
@@ -288,7 +286,6 @@ void gameLoop()
     }
 }
 
-// TODO
 // Called when there are too few players to start the game
 void waitForPlayers()
 {
@@ -345,7 +342,6 @@ void waitForPlayers()
     }
 }
 
-// TODO
 // The round begins
 void roundStart()
 {
@@ -424,7 +420,6 @@ std::string generateLetters()
     return picked;
 }
 
-// TODO
 void sendToAllPlaying(std::string message)
 {
     message += '\n';
@@ -432,13 +427,6 @@ void sendToAllPlaying(std::string message)
     {
         write(playing, message.c_str(), message.size());
     }
-}
-
-// TODO
-// Checks if the word provided by the player is a valid one
-bool checkIfCorrectWord(char *word)
-{
-    return 0;
 }
 
 // TODO
@@ -473,7 +461,6 @@ void handleServerEvent(int revents)
     }
 }
 
-// TODO
 void handleClientEvent(int clientId)
 {
     int clientFd = pollFds[clientId].fd;
@@ -490,9 +477,17 @@ void handleClientEvent(int clientId)
         if (players.find(clientFd) == players.end())
         {
             // Obtain player nickname
-            // std::thread nicknameT(getNickname, clientFd);
-            // nicknameT.detach();
             getNickname(clientFd);
+            std::string message;
+            if (isGameRunning)
+            {
+                message = "Waiting for the current game to end...\n";
+            }
+            else
+            {
+                message = "Waiting for the game to start...\n";
+            }
+            write(clientFd, message.c_str(), message.size());
         }
         // Player sent a word during current round
         else if (isRoundRunning && inGame.find(clientFd) != inGame.end())
@@ -542,9 +537,33 @@ void getNickname(int clientFd)
     
 }
 
+// TODO
+// Handles user input during game
 void handleInput(int clientFd)
 {
+    char buffer[SIZE];
+    memset(buffer, 0, SIZE);
+    std::string word;
+    int score;
+    int r = read(clientFd, buffer, SIZE);
+    buffer[strlen(buffer)-1] = '\0';
+    word = buffer;
 
+    if (checkIfCorrectWord(word))
+    {
+        score = basePoints;
+        std::pair<std::string,int> wordScore (word, score);
+        words.insert(wordScore);
+        scores[players[clientFd]] += score;
+        printf("%s answered: %s\n", players[clientFd].c_str(), word.c_str());
+    }
+}
+
+// TODO
+// Checks if the word provided by the player is a valid one
+bool checkIfCorrectWord(std::string word)
+{
+    return true;
 }
 
 void removeClient(int clientFd)
@@ -576,7 +595,7 @@ void removeClient(int clientFd)
         }
         players.erase(clientFd);
     }
-    cv.notify_all();
+    //cv.notify_all();
     printf("Player disconnected\n");
 }
 
@@ -584,8 +603,8 @@ void handleStdInput(int revents)
 {
     if (revents & POLLIN)
     {
-        char c;
-        int r = read(0, &c, 1);
-        if (c == 'q') { serverShutdown(SIGINT); }
+        char c[2];
+        int r = read(0, c, 2);
+        if (c[0] == 'q') { serverShutdown(SIGINT); }
     }
 }
