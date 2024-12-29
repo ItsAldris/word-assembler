@@ -40,10 +40,12 @@ std::atomic_bool countdownOn = false;
 std::atomic_bool gameEnd = false;
 std::default_random_engine gen(std::random_device{}());
 std::condition_variable cv;
+int answers = 0;
 
 std::thread gameLoopT;
 std::thread countDownT;
 std::thread timerT;
+std::vector<std::thread> threads;
 
 // Structures
 std::unordered_map<int,std::string> players;
@@ -91,6 +93,8 @@ void waitingRoom();
 void removeClient(int clientId);
 
 void handleStdInput(int revents);
+
+void joinThreads();
 
 
 int main(int argc, char* argv[])
@@ -207,6 +211,8 @@ void serverShutdown(int)
 
     cv.notify_all();
 
+    joinThreads();
+
     if (countDownT.joinable())
     {
         countDownT.join();
@@ -242,7 +248,7 @@ void countdown(int seconds, std::function<void(int)> onTick)
 {
     while (seconds > 0) 
     {
-        if (stopTimer) { return; }
+        if (stopTimer || gameEnd) { break; }
         onTick(seconds-1); 
         std::this_thread::sleep_for(std::chrono::seconds(1));
         --seconds;
@@ -262,6 +268,7 @@ void gameLoop()
     {
         if (gameEnd) { pthread_exit(nullptr); }
         waitForPlayers();
+        joinThreads();
         // Add all players to the game
         for (auto player : players)
         {
@@ -289,55 +296,53 @@ void gameLoop()
 // Called when there are too few players to start the game
 void waitForPlayers()
 {
-    printf("Waiting for players...\n");
-
-    int countdownLeft = waitForPlayersTime;
-    countdownOn = false;
-
-    // Countdown callback setup
-    auto onTick = [&countdownLeft](int timeLeft) 
+    while(1)
     {
+        printf("Waiting for players...\n");
+
+        countdownOn = false;
+        stopTimer = false;
+
+        // Countdown callback setup
+        auto onTick = [](int timeLeft) 
         {
             printf("Time left: %d\n", timeLeft);
-            std::unique_lock<std::mutex> lock(mtx);
-            countdownLeft = timeLeft;
-        }
-    };
+        };
 
-    while (1)
-    {
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            cv.wait(lock, [&]() { return gameEnd || players.size() >= 2; });
+        }
+
         if (gameEnd)
         {
-            if (countdownOn)
-            {
-                stopTimer = true;
-                countdownOn = false;
-                countDownT.join();
-            }
             pthread_exit(nullptr);
         }
-        // Begin the countdown when at least 2 players are connected
-        if (players.size() >= 2 && !countdownOn) 
+
+        threads.emplace_back(countdown, waitForPlayersTime, onTick);
+        countdownOn = true;
+
         {
-            countDownT = std::thread(countdown, waitForPlayersTime, onTick);
-            countdownOn = true;
+            std::unique_lock<std::mutex> lock(mtx);
+            cv.wait(lock, [&]() { return gameEnd || players.size() < 2 || !countdownOn; });
         }
-        // Check if there are at least 2 players and start the game
-        else if (countdownOn && countdownLeft == 0 && players.size() >= 2)
+
+        if (gameEnd)
         {
-            countdownOn = false;
-            countDownT.join();
-            printf("Done waiting!\n");
-            return;
+            pthread_exit(nullptr);
         }
-        // Someone disconnected before countdown finished
-        else if (countdownOn && players.size() < 2)
+        else if (players.size() < 2)
         {
             stopTimer = true;
-            countDownT.join();
-            stopTimer = false;
+            joinThreads();
             countdownOn = false;
             printf("Not enough players, waiting again...\n");
+            continue;
+        }
+        else
+        {
+            printf("Done waiting!\n");
+            return;
         }
     }
 }
@@ -348,6 +353,7 @@ void roundStart()
     if (gameEnd) { pthread_exit(nullptr); }
     printf("Starting the round...\n");
     isRoundRunning = true;
+    answers = 0;
     // Generate a random sequence of letters and send it to all players
     // Wait for players to send their words or until the time runs out
     // Assign the scores to players
@@ -361,8 +367,6 @@ void roundStart()
     {
         {
             printf("Time until round ends: %d\n", timeLeft);
-            // std::unique_lock<std::mutex> lock(mtx);
-            // countdownLeft = timeLeft;
         }
         if (timeLeft == 0)
         {
@@ -376,8 +380,9 @@ void roundStart()
 
     {
         std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [&]() { return gameEnd || !countdownOn || words.size() == inGame.size(); });
+        cv.wait(lock, [&]() { return gameEnd || !countdownOn || answers == inGame.size(); });
     }
+    //printf("words.size() = %lu\n inGame.size() = %lu\n", words.size(), inGame.size());
 
     if (gameEnd) 
     {
@@ -388,7 +393,7 @@ void roundStart()
     }
     
     {
-        //std::unique_lock<std::mutex> lock(mtx);
+        std::unique_lock<std::mutex> lock(mtx);
         if (!stopTimer)
         {
             stopTimer = true;
@@ -555,6 +560,8 @@ void handleInput(int clientFd)
         std::pair<std::string,int> wordScore (word, score);
         words.insert(wordScore);
         scores[players[clientFd]] += score;
+        answers += 1;
+        cv.notify_all();
         printf("%s answered: %s\n", players[clientFd].c_str(), word.c_str());
     }
 }
@@ -595,7 +602,7 @@ void removeClient(int clientFd)
         }
         players.erase(clientFd);
     }
-    //cv.notify_all();
+    cv.notify_all();
     printf("Player disconnected\n");
 }
 
@@ -607,4 +614,15 @@ void handleStdInput(int revents)
         int r = read(0, c, 2);
         if (c[0] == 'q') { serverShutdown(SIGINT); }
     }
+}
+
+void joinThreads()
+{
+    for (std::thread & t : threads) 
+    {
+        t.join();
+    }
+    if (gameEnd) { gameLoopT.join(); }
+
+    threads.clear();
 }
