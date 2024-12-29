@@ -1,6 +1,8 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <iostream>
+#include <fstream>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -42,6 +44,7 @@ std::default_random_engine gen(std::random_device{}());
 std::condition_variable cv;
 int answers = 0;
 std::string message;
+std::string letters;
 
 std::thread gameLoopT;
 std::vector<std::thread> threads;
@@ -51,6 +54,7 @@ std::unordered_map<int,std::string> players;
 std::unordered_map<std::string,int> scores;
 std::unordered_set<std::string> inGame;
 std::unordered_set<std::string> words;
+std::unordered_set<std::string> dictionary;
 
 // Those will be put in a configuration file later (hopefully)
 int numOfRounds = 3; // Rounds in a single game
@@ -60,6 +64,7 @@ int negativePoints = -10; // Points for providing incorrect answer
 int waitForPlayersTime = 10; // How long the server waits for more players to join
 int roundTime = 10; // How long one round lasts
 int letterCount = 10; // The number of letters chosen in one round
+std::string dictPath = "en_US.dic";
 
 short getPort(char * port);
 
@@ -94,6 +99,8 @@ void removeClient(int clientId);
 void handleStdInput(int revents);
 
 void joinThreads();
+
+void readDictionary(std::string path);
 
 
 int main(int argc, char* argv[])
@@ -153,6 +160,9 @@ int main(int argc, char* argv[])
     pollFds[1].fd = STDIN_FILENO;
     pollFds[1].events = POLLIN;
     descrCount++;
+
+    // Load the dictionary file
+    readDictionary(dictPath);
 
     // Begin the game logic
     gameLoopT = std::thread(gameLoop);
@@ -378,7 +388,7 @@ void roundStart()
     // Generate a random sequence of letters and send it to all players
     // Wait for players to send their words or until the time runs out
     // Assign the scores to players
-    std::string letters = generateLetters();
+    letters = generateLetters();
     sendToAllPlaying(letters);
     stopTimer = false;
 
@@ -580,17 +590,37 @@ void handleInput(int clientFd)
     {
         score = basePoints;
         words.insert(word);
-        scores[players[clientFd]] += score;
-        answers += 1;
-        cv.notify_all();
-        printf("%s answered: %s\n", players[clientFd].c_str(), word.c_str());
     }
+    else
+    {
+        score = negativePoints;
+    }
+
+    scores[players[clientFd]] += score;
+    answers += 1;
+    cv.notify_all();
+    printf("%s answered: %s\n", players[clientFd].c_str(), word.c_str());
 }
 
 // TODO
 // Checks if the word provided by the player is a valid one
 bool checkIfCorrectWord(std::string word)
 {
+    // Word not found in dictionary
+    if (dictionary.find(word) == dictionary.end())
+    {
+        return false;
+    }
+    
+    for (char letter : word)
+    {
+        // Word contains different letters than provided
+        if (letters.find(letter) == std::string::npos)
+        {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -653,4 +683,25 @@ void joinThreads()
     if (gameEnd) { gameLoopT.join(); }
 
     threads.clear();
+}
+
+void readDictionary(std::string path)
+{
+    std::ifstream file(path);
+
+    if (!file.is_open()) 
+    {
+        perror("Failed to open dictionary file");
+        exit(1);
+    }
+
+    std::string line;
+    while (std::getline(file, line))
+    {
+        int endOfWord = line.find_first_of("/");
+        std::string word = line.substr(0, endOfWord);
+        dictionary.insert(word);
+    }
+
+    file.close();
 }
