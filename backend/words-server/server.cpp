@@ -41,17 +41,16 @@ std::atomic_bool gameEnd = false;
 std::default_random_engine gen(std::random_device{}());
 std::condition_variable cv;
 int answers = 0;
+std::string message;
 
 std::thread gameLoopT;
-std::thread countDownT;
-std::thread timerT;
 std::vector<std::thread> threads;
 
 // Structures
 std::unordered_map<int,std::string> players;
 std::unordered_map<std::string,int> scores;
-std::unordered_map<std::string,int> words;
-std::unordered_set<int> inGame;
+std::unordered_set<std::string> inGame;
+std::unordered_set<std::string> words;
 
 // Those will be put in a configuration file later (hopefully)
 int numOfRounds = 3; // Rounds in a single game
@@ -80,6 +79,8 @@ bool checkIfCorrectWord(std::string word);
 
 void sendToAllPlaying(std::string message);
 
+void sendToAll(std::string message);
+
 void handleServerEvent(int revents);
 
 void handleClientEvent(int clientDescr);
@@ -87,8 +88,6 @@ void handleClientEvent(int clientDescr);
 void handleInput(int clientFd);
 
 void getNickname(int clientFd);
-
-void waitingRoom();
 
 void removeClient(int clientId);
 
@@ -213,16 +212,6 @@ void serverShutdown(int)
 
     joinThreads();
 
-    if (countDownT.joinable())
-    {
-        countDownT.join();
-    }
-
-    // if (timerT.joinable())
-    // {
-    //     timerT.join();
-    // }
-
     if (gameLoopT.joinable())
     {
         gameLoopT.join();
@@ -266,13 +255,19 @@ void gameLoop()
     // The loop in question
     while(1)
     {
-        if (gameEnd) { pthread_exit(nullptr); }
         waitForPlayers();
         joinThreads();
+        message = "\nNew game starts!\nPlayers in this game: ";
+        sendToAll(message);
+        printf("%s\n", message.c_str());
         // Add all players to the game
         for (auto player : players)
         {
-            inGame.insert(player.first);
+            std::pair<int,std::string> pl (player.first, player.second);
+            inGame.insert(player.second);
+            message = player.second;
+            sendToAll(message);
+            printf("%s\n", message.c_str());
         }
 
         // Start the game
@@ -282,13 +277,40 @@ void gameLoop()
             // Check if still enough players in game
             if (inGame.size() < 2)
             {
-                printf("Not enough players to continue the game.\n");
+                message = "Not enough players to continue the game.";
+                sendToAllPlaying(message);
+                printf("%s\n", message.c_str());
                 break;
             }
+            sendToAll("\nRound " + std::to_string(i+1) + " begins!");
             roundStart();
+            sendToAll("Round " + std::to_string(i+1) + " ended!\nCurrent scores:");
+            for (auto s : scores)
+            {
+                if (inGame.find(s.first) != inGame.end())
+                {
+                    sendToAll(s.first + ": " + std::to_string(s.second));
+                }
+            }
+            joinThreads();
         }
         isGameRunning = false;
-        scores.clear();
+        message = "\nGame ended! Top 3 players:";
+        sendToAll(message);
+        printf("%s\n", message.c_str());
+        std::vector<std::pair<std::string, int>> highscores(scores.begin(), scores.end());
+        std::sort(highscores.begin(), highscores.end(), [](auto a, auto b) { return a.second > b.second; });
+        for (int i = 0; i < 3 && i < highscores.size(); i++)
+        {
+            if (inGame.find(highscores[i].first) == inGame.end()) { continue; }
+            message = highscores[i].first + " with " + std::to_string(highscores[i].second) + " points!";
+            sendToAll(message);
+            printf("%s\n", message.c_str());
+        }
+        for (auto & s : scores)
+        {
+            s.second = 0;
+        }
         inGame.clear();
     }
 }
@@ -350,7 +372,6 @@ void waitForPlayers()
 // The round begins
 void roundStart()
 {
-    if (gameEnd) { pthread_exit(nullptr); }
     printf("Starting the round...\n");
     isRoundRunning = true;
     answers = 0;
@@ -359,49 +380,38 @@ void roundStart()
     // Assign the scores to players
     std::string letters = generateLetters();
     sendToAllPlaying(letters);
-    int countdownLeft = roundTime;
     stopTimer = false;
 
     // Countdown callback setup
-    auto onTick = [&countdownLeft](int timeLeft) 
+    auto onTick = [](int timeLeft) 
     {
         {
             printf("Time until round ends: %d\n", timeLeft);
         }
-        if (timeLeft == 0)
-        {
-            stopTimer = true;
-            cv.notify_all();
-        }
     };
 
-    timerT = std::thread(countdown, roundTime, onTick);
+    threads.emplace_back(countdown, roundTime, onTick);
     countdownOn = true;
 
     {
         std::unique_lock<std::mutex> lock(mtx);
         cv.wait(lock, [&]() { return gameEnd || !countdownOn || answers == inGame.size(); });
     }
-    //printf("words.size() = %lu\n inGame.size() = %lu\n", words.size(), inGame.size());
 
     if (gameEnd) 
     {
         stopTimer = true;
         countdownOn = false;
-        timerT.join();
         pthread_exit(nullptr);
     }
     
+    if (!stopTimer)
     {
-        std::unique_lock<std::mutex> lock(mtx);
-        if (!stopTimer)
-        {
-            stopTimer = true;
-        }
+        stopTimer = true;
     }
 
+    joinThreads();
     countdownOn = false;
-    timerT.join();
     stopTimer = false;
     isRoundRunning = false;
 
@@ -428,9 +438,21 @@ std::string generateLetters()
 void sendToAllPlaying(std::string message)
 {
     message += '\n';
-    for (auto playing : inGame)
+    for (auto player : players)
     {
-        write(playing, message.c_str(), message.size());
+        if (inGame.find(player.second) != inGame.end())
+        {
+            write(player.first, message.c_str(), message.size());
+        }
+    }
+}
+
+void sendToAll(std::string message)
+{
+    message += '\n';
+    for (auto player : players)
+    {
+        write(player.first, message.c_str(), message.size());
     }
 }
 
@@ -495,7 +517,7 @@ void handleClientEvent(int clientId)
             write(clientFd, message.c_str(), message.size());
         }
         // Player sent a word during current round
-        else if (isRoundRunning && inGame.find(clientFd) != inGame.end())
+        else if (isRoundRunning && inGame.find(players[clientFd]) != inGame.end())
         {
             handleInput(clientFd);
         }
@@ -557,8 +579,7 @@ void handleInput(int clientFd)
     if (checkIfCorrectWord(word))
     {
         score = basePoints;
-        std::pair<std::string,int> wordScore (word, score);
-        words.insert(wordScore);
+        words.insert(word);
         scores[players[clientFd]] += score;
         answers += 1;
         cv.notify_all();
@@ -585,25 +606,32 @@ void removeClient(int clientFd)
     }
     shutdown(clientFd, SHUT_RDWR);
     close(clientFd);
+    std::string message;
     
     // Clear structures
     std::unordered_map<int,std::string>::const_iterator gotPlayer = players.find(clientFd);
     if (gotPlayer != players.end())
     {
+        message = players[clientFd] + " disconnected\n";
         std::unordered_map<std::string, int>::const_iterator gotScore = scores.find(players[clientFd]);
         if (gotScore != scores.end())
         {
             scores.erase(players[clientFd]);
         }
-        std::unordered_set<int>::const_iterator gotInGame = inGame.find(clientFd);
+        std::unordered_set<std::string>::const_iterator gotInGame = inGame.find(players[clientFd]);
         if (gotInGame != inGame.end())
         {
-            inGame.erase(clientFd);
+            inGame.erase(players[clientFd]);
         }
         players.erase(clientFd);
     }
+    else
+    {
+        message = "Player disconnected\n";
+    }
     cv.notify_all();
-    printf("Player disconnected\n");
+    sendToAllPlaying(message);
+    printf("%s", message.c_str());
 }
 
 void handleStdInput(int revents)
