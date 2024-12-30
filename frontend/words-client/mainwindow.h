@@ -63,6 +63,7 @@ private:
     // przyciski
     void connectBtnHit();
     void sendBtnHit();
+    void submitBtnHit();
     void disconnectBtnHit();
 };
 #endif // MAINWINDOW_H

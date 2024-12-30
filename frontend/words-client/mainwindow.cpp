@@ -18,7 +18,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->disconnectButton, &QPushButton::clicked, this, &MainWindow::disconnectBtnHit);
 
-    ui->plainTextEdit->setEnabled(false);
+    connect(ui->acceptButton_1, &QPushButton::clicked, this, &MainWindow::submitBtnHit);
+    connect(ui->wordLineEdit, &QLineEdit::returnPressed, this, &MainWindow::submitBtnHit);
+
+//    ui->plainTextEdit->setEnabled(false);
     ui->usernameGroupBox->setEnabled(false);
     isConnected = false;
 }
@@ -29,6 +32,8 @@ MainWindow::~MainWindow()
         sock->close();
     delete ui;
 }
+
+// 1 strona
 
 void MainWindow::connectBtnHit(){
     ui->plainTextEdit->appendPlainText("connecting...");
@@ -51,13 +56,17 @@ void MainWindow::sendBtnHit(){
         connectBtnHit();
         return;
     }
-
+    auto txt = ui->usernameLineEdit->text().trimmed();
+    if(txt.isEmpty())
+        return;
+    sock->write((txt+'\n').toUtf8());
     ui->plainTextEdit->appendPlainText("waiting for server response...");
 
-    ui->plainTextEdit->appendPlainText("username accepted");
+    //TODO check if username is accepted
+
     if (isConnected)
         ui->stackedWidget->setCurrentIndex(1);
-
+    ui->plainTextEdit_2->setPlainText("username accepted");
 }
 
 void MainWindow::disconnectBtnHit(){
@@ -65,6 +74,8 @@ void MainWindow::disconnectBtnHit(){
         delete sock;
     ui->stackedWidget->setCurrentIndex(0);
 }
+
+//funkcje sieciowe - obsluga socketu
 
 void MainWindow::socketConnected(){
     isConnected = true;
@@ -90,3 +101,24 @@ void MainWindow::socketReadable(){
     QByteArray ba = sock->readAll();
     ui->plainTextEdit_2->appendPlainText(QString::fromUtf8(ba).trimmed());
 }
+
+// 2 strona
+
+void MainWindow::submitBtnHit(){
+
+    //jesli nie polaczono, wywolaj connectBtnHit
+    if(!isConnected){
+        connectBtnHit();
+        return;
+    }
+    auto txt = ui->wordLineEdit->text().trimmed();
+    if(txt.isEmpty())
+        return;
+    sock->write((txt+'\n').toUtf8());
+    ui->plainTextEdit_2->appendPlainText("waiting for server response...");
+    ui->wordLineEdit->clear();
+}
+
+
+
+
