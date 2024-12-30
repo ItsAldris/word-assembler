@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>828</width>
-    <height>453</height>
+    <width>754</width>
+    <height>514</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -25,35 +25,49 @@
         <item row="0" column="0">
          <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,0">
           <item>
-           <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="33,10,10">
-            <property name="spacing">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="QLineEdit" name="addressLineEdit">
-              <property name="text">
-               <string>localhost</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QSpinBox" name="portSpinBox">
-              <property name="maximum">
-               <number>66000</number>
-              </property>
-              <property name="value">
-               <number>2000</number>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="connectButton">
-              <property name="text">
-               <string>connect</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
+           <widget class="QGroupBox" name="connectGroupBox">
+            <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="33,10,10">
+             <property name="spacing">
+              <number>6</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLineEdit" name="addressLineEdit">
+               <property name="text">
+                <string>localhost</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QSpinBox" name="portSpinBox">
+               <property name="maximum">
+                <number>66000</number>
+               </property>
+               <property name="value">
+                <number>8000</number>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="connectButton">
+               <property name="text">
+                <string>connect</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
           </item>
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_5">
@@ -73,25 +87,39 @@
            </layout>
           </item>
           <item>
-           <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="26,6">
-            <item>
-             <widget class="QLineEdit" name="usernameLineEdit">
-              <property name="text">
-               <string/>
-              </property>
-              <property name="placeholderText">
-               <string>username</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="acceptButton">
-              <property name="text">
-               <string>accept</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
+           <widget class="QGroupBox" name="usernameGroupBox">
+            <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="26,6">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLineEdit" name="usernameLineEdit">
+               <property name="text">
+                <string/>
+               </property>
+               <property name="placeholderText">
+                <string>username</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="acceptButton">
+               <property name="text">
+                <string>accept</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
           </item>
          </layout>
         </item>
@@ -102,32 +130,49 @@
         <item row="0" column="0">
          <layout class="QVBoxLayout" name="verticalLayout_2" stretch="0,0,0">
           <item>
-           <layout class="QHBoxLayout" name="horizontalLayout_6" stretch="33,10,10">
-            <item>
-             <widget class="QLineEdit" name="lettersLineEdit">
-              <property name="text">
-               <string/>
-              </property>
-              <property name="placeholderText">
-               <string>letters</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLCDNumber" name="lcdNumber">
-              <property name="value" stdset="0">
-               <double>30.000000000000000</double>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="disconnectButton">
-              <property name="text">
-               <string>disconnect</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
+           <widget class="QGroupBox" name="timerGroupBox">
+            <layout class="QHBoxLayout" name="horizontalLayout_6" stretch="33,10,10">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLineEdit" name="lettersLineEdit">
+               <property name="text">
+                <string/>
+               </property>
+               <property name="placeholderText">
+                <string>letters</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLCDNumber" name="lcdNumber">
+               <property name="value" stdset="0">
+                <double>10.000000000000000</double>
+               </property>
+               <property name="intValue" stdset="0">
+                <number>10</number>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="disconnectButton">
+               <property name="text">
+                <string>disconnect</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
           </item>
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_7" stretch="30,7">
@@ -140,25 +185,39 @@
            </layout>
           </item>
           <item>
-           <layout class="QHBoxLayout" name="horizontalLayout_8" stretch="26,6">
-            <item>
-             <widget class="QLineEdit" name="wordLineEdit">
-              <property name="text">
-               <string/>
-              </property>
-              <property name="placeholderText">
-               <string>word</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="acceptButton_1">
-              <property name="text">
-               <string>accept</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
+           <widget class="QGroupBox" name="wordsGroupBox">
+            <layout class="QHBoxLayout" name="horizontalLayout_8" stretch="26,6">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLineEdit" name="wordLineEdit">
+               <property name="text">
+                <string/>
+               </property>
+               <property name="placeholderText">
+                <string>word</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="acceptButton_1">
+               <property name="text">
+                <string>accept</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
           </item>
          </layout>
         </item>
@@ -173,7 +232,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>828</width>
+     <width>754</width>
      <height>26</height>
     </rect>
    </property>

@@ -8,7 +8,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
 
     // here add connect ui obj to fun. example:
-    // connect(ui->conectBtn, &QPushButton::clicked, this, &MyWidget::connectBtnHit);
+    // connect(ui->connectBtn, &QPushButton::clicked, this, &MainWindow::connectBtnHit);
 
     connect(ui->connectButton, &QPushButton::clicked, this, &MainWindow::connectBtnHit);
     connect(ui->addressLineEdit, &QLineEdit::returnPressed, this, &MainWindow::connectBtnHit);
@@ -17,29 +17,76 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->usernameLineEdit, &QLineEdit::returnPressed, this, &MainWindow::sendBtnHit);
 
     connect(ui->disconnectButton, &QPushButton::clicked, this, &MainWindow::disconnectBtnHit);
+
+    ui->plainTextEdit->setEnabled(false);
+    ui->usernameGroupBox->setEnabled(false);
+    isConnected = false;
 }
 
 MainWindow::~MainWindow()
 {
-    // if(sock)
-    //    sock->close();
+     if(sock)
+        sock->close();
     delete ui;
 }
 
 void MainWindow::connectBtnHit(){
     ui->plainTextEdit->appendPlainText("connecting...");
+//    if(sock)
+//        delete sock;
+    sock = new QTcpSocket(this);
+    connect(sock, &QTcpSocket::connected, this, &MainWindow::socketConnected);
+    connect(sock, &QTcpSocket::disconnected, this, &MainWindow::socketDisconnected);
+    connect(sock, &QTcpSocket::errorOccurred, this, &MainWindow::socketError);
+    connect(sock, &QTcpSocket::readyRead, this, &MainWindow::socketReadable);
 
-    ui->plainTextEdit->appendPlainText("connected successfully");
+    sock->connectToHost(ui->addressLineEdit->text(), ui->portSpinBox->value());
+
 }
 
 void MainWindow::sendBtnHit(){
+
+    //jesli nie polaczono, wywolaj connectBtnHit
+    if(!isConnected){
+        connectBtnHit();
+        return;
+    }
+
     ui->plainTextEdit->appendPlainText("waiting for server response...");
 
     ui->plainTextEdit->appendPlainText("username accepted");
-    ui->stackedWidget->setCurrentIndex(1);
+    if (isConnected)
+        ui->stackedWidget->setCurrentIndex(1);
+
 }
 
 void MainWindow::disconnectBtnHit(){
-    ui->plainTextEdit->appendPlainText("disconnected");
+    if(sock && isConnected)
+        delete sock;
     ui->stackedWidget->setCurrentIndex(0);
+}
+
+void MainWindow::socketConnected(){
+    isConnected = true;
+    ui->plainTextEdit->appendPlainText("connected successfully");
+    ui->usernameGroupBox->setEnabled(true);
+}
+void MainWindow::socketDisconnected(){
+    isConnected = false;
+    ui->plainTextEdit->appendPlainText("disconnected");
+    ui->usernameGroupBox->setEnabled(false);
+    ui->stackedWidget->setCurrentIndex(0);
+}
+void MainWindow::socketError(QTcpSocket::SocketError err){
+    if(err == QTcpSocket::RemoteHostClosedError)
+        return;
+//    QMessageBox::critical(this, "Error", sock->errorString());
+    isConnected = false;
+    ui->plainTextEdit->appendPlainText("Socket error: "+sock->errorString());
+    ui->usernameGroupBox->setEnabled(false);
+    ui->stackedWidget->setCurrentIndex(0);
+}
+void MainWindow::socketReadable(){
+    QByteArray ba = sock->readAll();
+    ui->plainTextEdit_2->appendPlainText(QString::fromUtf8(ba).trimmed());
 }
