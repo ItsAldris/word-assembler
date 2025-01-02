@@ -99,7 +99,31 @@ void MainWindow::socketError(QTcpSocket::SocketError err){
 }
 void MainWindow::socketReadable(){
     QByteArray ba = sock->readAll();
+    QString text = QString::fromUtf8(ba).trimmed();
+    msgParser(text);
     ui->plainTextEdit_2->appendPlainText(QString::fromUtf8(ba).trimmed());
+}
+
+void MainWindow::msgParser(QString &text){
+
+    msgBuf.append(text);
+    if (!msgBuf.contains("{")){
+        msgBuf.clear();
+        return;
+    }
+
+    while(msgBuf.contains("}")){
+        startIdx = msgBuf.indexOf("{")+1;
+        endIdx = msgBuf.indexOf("}");
+        len = endIdx-startIdx;
+        msg = msgBuf.mid(startIdx,len);
+
+        //example usage
+        ui->statsPlainTextEdit->appendPlainText(msg);
+
+        msgBuf.remove(0,endIdx+1);
+        //TODO prevent getting { twice
+    }
 }
 
 // 2 strona

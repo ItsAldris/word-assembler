@@ -58,6 +58,10 @@ private:
     QStackedWidget *stackedWidget;
 
     // pomocnicze
+    QString msg;
+    QString msgBuf;
+    int startIdx, endIdx, len;
+    void msgParser(QString &text);
 //    void switchToPage(int pageIndex);
 
     // przyciski
