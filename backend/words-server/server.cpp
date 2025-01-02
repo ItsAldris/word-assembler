@@ -446,19 +446,30 @@ void roundStart(int roundNum)
     printf("Round ended!\n");
 }
 
-// TODO
 // Generates a string made from random letters
 std::string generateLetters()
 {
     std::string picked = "";
-    std::string letters = "abcdefghijklmnoprstuwyz";
+    std::string letters1 = "aeiouy";
+    std::string letters2 = "bcdfghjklmnprstvwxz";
     printf("Generating letters...\n");
-    for (int i = 0; i < letterCount; i++)
+    // Pick at least two vowels
+    std::uniform_int_distribution<int> dist(2, letters1.length());
+    int vowels = dist(gen);
+    for (int i = 0; i < vowels; i++)
     {
-        std::uniform_int_distribution<int> dist(0, letters.length()-1);
-        int index = dist(gen);
-        picked += letters.at(index);
-        letters.erase(index, 1);
+        std::uniform_int_distribution<int> dist1(0, letters1.length()-1);
+        int index = dist1(gen);
+        picked += letters1.at(index);
+        letters1.erase(index, 1);
+    }
+    int consonants = letterCount - vowels;
+    for (int i = 0; i < consonants; i++)
+    {
+        std::uniform_int_distribution<int> dist2(0, letters2.length()-1);
+        int index = dist2(gen);
+        picked += letters2.at(index);
+        letters2.erase(index, 1);
     }
     return picked;
 }
@@ -484,7 +495,6 @@ void sendToAll(std::string message)
     }
 }
 
-// TODO
 // Handle the event that occured on serverFd
 void handleServerEvent(int revents)
 {
@@ -499,9 +509,13 @@ void handleServerEvent(int revents)
         {
             error(0, errno, "Error when receiving new connection from client");
         }
-        
-        // TODO
-        // Add resizable pollFds
+
+        // Resizable pollFds
+        if (descrCount == maxDescrCount)
+        {
+            maxDescrCount *= 2;
+            pollFds = (pollfd *)realloc(pollFds, maxDescrCount*sizeof(pollfd));
+        }
         
         pollFds[descrCount].fd = clientFd;
         pollFds[descrCount].events = POLLIN|POLLRDHUP;
