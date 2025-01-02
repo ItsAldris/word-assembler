@@ -25,7 +25,6 @@
 #include <condition_variable>
 #include <pthread.h>
 
-// We're planning to use poll and threads, working on it
 // Quit program with q+enter (ctrl+c should work too)
 
 #define SIZE 255 // buffer size
@@ -92,7 +91,7 @@ void handleClientEvent(int clientDescr);
 
 void handleInput(int clientFd);
 
-void getNickname(int clientFd);
+void getNickname(int clientFd, int descr);
 
 void removeClient(int clientId);
 
@@ -399,7 +398,6 @@ void roundStart(int roundNum)
     answers = 0;
     // Generate a random sequence of letters and send it to all players
     // Wait for players to send their words or until the time runs out
-    // Assign the scores to players
     letters = generateLetters();
     sendToAllPlaying(letters);
     stopTimer = false;
@@ -522,6 +520,9 @@ void handleServerEvent(int revents)
         descrCount++;
         
         printf("New player connected: %s on port %d\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
+
+        // Get nickname from player
+        threads.emplace_back(getNickname, clientFd, descrCount-1);
     }
     else
     {
@@ -542,39 +543,33 @@ void handleClientEvent(int clientId)
     }
     else if (revents & POLLIN)
     {
-        // New player
-        if (players.find(clientFd) == players.end())
-        {
-            // Obtain player nickname
-            getNickname(clientFd);
-            std::string message;
-            if (isGameRunning)
-            {
-                message = "Waiting for the current game to end...\n";
-            }
-            else
-            {
-                message = "Waiting for the game to start...\n";
-            }
-            write(clientFd, message.c_str(), message.size());
-        }
         // Player sent a word during current round
-        else if (isRoundRunning && inGame.find(players[clientFd]) != inGame.end())
+        if (isRoundRunning && inGame.find(players[clientFd]) != inGame.end())
         {
             handleInput(clientFd);
         }
     }
 }
 
-void getNickname(int clientFd)
+void getNickname(int clientFd, int descr)
 {
     char buffer[SIZE];
     std::string nick;
 
     while(1)
     {
+        // Disconnection or end of game
+        if (pollFds[descr].fd != clientFd || gameEnd)
+        {
+            return;
+        }
         memset(buffer, 0, SIZE);
         int r = read(clientFd, buffer, SIZE);
+        // Disconnection also
+        if (r <= 0)
+        {
+            return;
+        }
         buffer[strlen(buffer)-1] = '\0';
         if (r > 0)
         {
@@ -595,13 +590,20 @@ void getNickname(int clientFd)
                 sendToAll(message);
                 printf("%s\n", message.c_str());
                 cv.notify_all();
+
+                if (isGameRunning)
+                {
+                    message = "Waiting for the current game to end...\n";
+                }
+                else
+                {
+                    message = "Waiting for the game to start...\n";
+                }
+                write(clientFd, message.c_str(), message.size());
                 return;
             }
         }
-        // else if (r == -1)
-        // {
-        //     removeClient(clientFd);
-        // }
+        
     }
     
 }
@@ -714,13 +716,18 @@ void handleStdInput(int revents)
 
 void joinThreads()
 {
+    bool clearable = true;
     for (std::thread & t : threads) 
     {
-        t.join();
+        if (t.joinable()) { t.join(); }
+        else if (clearable) { clearable = false; }
     }
     if (gameEnd) { gameLoopT.join(); }
 
-    threads.clear();
+    if (clearable)
+    {
+        threads.clear();
+    }
 }
 
 // Read dictionary file into unordered_set for fast look-up
