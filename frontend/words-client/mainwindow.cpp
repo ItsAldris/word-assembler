@@ -104,27 +104,55 @@ void MainWindow::socketReadable(){
     ui->plainTextEdit_2->appendPlainText(QString::fromUtf8(ba).trimmed());
 }
 
-void MainWindow::msgParser(QString &text){
-
+void MainWindow::msgParser(QString &text) {
     msgBuf.append(text);
-    if (!msgBuf.contains("{")){
-        msgBuf.clear();
-        return;
-    }
 
-    while(msgBuf.contains("}")){
-        startIdx = msgBuf.indexOf("{")+1;
-        endIdx = msgBuf.indexOf("}");
-        len = endIdx-startIdx;
-        msg = msgBuf.mid(startIdx,len);
+    while (msgBuf.contains("{") && msgBuf.contains("}")){
+        int startIdx = msgBuf.indexOf("{");
+        int endIdx = msgBuf.indexOf("}");
+        if (startIdx > endIdx) {
+            msgBuf.remove(0, endIdx + 1);
+            continue;
+        }
 
-        //example usage
-        ui->statsPlainTextEdit->appendPlainText(msg);
+        QString msg = msgBuf.mid(startIdx + 1, endIdx - startIdx - 1);
+        QString args;
+        int argsIdx = msg.indexOf(":");
+        if (argsIdx != -1) {
+            args = msg.mid(argsIdx + 1);
+            msg = msg.left(argsIdx);
+        }
 
-        msgBuf.remove(0,endIdx+1);
-        //TODO prevent getting { twice
+        if (msg.startsWith("sx")) { // Server
+            ui->plainTextEdit->appendPlainText("Server shut down");
+        } else if (msg[0]=='p') { // Player
+            if (msg[1] == 'n') {
+                ui->plainTextEdit_2->appendPlainText("Not enough players to play!");
+            } else if (msg[1] == 'c' || msg[1] == 'd' || msg[1] == 'a') {
+                QString text = "Player " + args;
+                if (msg[1] == 'c') text += " connected!";
+                else if (msg[1] == 'd') text += " disconnected!";
+                else if (msg[1] == 'a') text += " answered!";
+                ui->plainTextEdit_2->appendPlainText(text);
+            }
+        } else if (msg[0]=='g') { // Game
+            if (msg[1] == 'w') ui->lcdNumber->display(args); //Wait time
+            else if (msg[1] == 'e') { /* Print best players */ } //End
+        } else if (msg[0]=='r') { // Round
+            if (msg[1] == 'w') ui->lcdNumber->display(args); //Wait time
+            else if (msg[1] == 'e') { /* Update stats */ } //End
+            else if (msg[1] == 's') { /* Update round number */ } //Start
+        } else if (msg[0]=='l') { // Letters
+            if (msg[1] == 'l') ui->lettersLineEdit->setText(args); //List
+        } else {
+            ui->statsPlainTextEdit->appendPlainText(msg);
+        }
+
+        // Remove processed message from buffer
+        msgBuf.remove(0, endIdx + 1);
     }
 }
+
 
 // 2 strona
 
