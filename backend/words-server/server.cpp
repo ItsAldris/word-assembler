@@ -56,6 +56,9 @@ std::unordered_set<std::string> inGame;
 std::unordered_set<std::string> words;
 std::unordered_set<std::string> dictionary;
 
+std::unordered_map<int,std::string> clientBuffers;
+
+
 // Those are in a configuration file
 int numOfRounds;// Rounds in a single game
 int basePoints;// Points for correct word
@@ -534,6 +537,8 @@ void handleServerEvent(int revents)
         pollFds[descrCount].events = POLLIN|POLLRDHUP;
         descrCount++;
 
+        clientBuffers[clientFd] = "";
+
         printf("New player connected: %s on port %d\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
         // Get nickname from player
@@ -581,8 +586,8 @@ void handleClientEvent(int clientId)
     }
 }
 
-void getNickname(int clientFd, int descr)
-{
+void getNickname(int clientFd, int descr) {
+    std::string &myBuffer = clientBuffers[clientFd]; // Bufor danych przypisany do klienta
     char buffer[SIZE];
     std::string nick;
 
@@ -595,37 +600,42 @@ void getNickname(int clientFd, int descr)
         }
         memset(buffer, 0, SIZE);
         int r = read(clientFd, buffer, SIZE);
+
         // Disconnection also
         if (r <= 0)
         {
             return;
         }
-        //buffer[strlen(buffer)-1] = '\0';
-        else
-        {
-            if (r <= NICK_SIZE) 
-            { 
-                //buffer[r-1] = '\0';
-                nick = std::string(buffer, r-1);
+
+        myBuffer.append(buffer, r);
+
+        // full message
+        while (myBuffer.find('{') != std::string::npos && myBuffer.find('}') != std::string::npos) {
+
+            int startIdx = myBuffer.find_first_of('{');
+            printf("%i\n",startIdx);
+            int endIdx = myBuffer.find_first_of('}');
+            printf("%i\n",endIdx);
+
+            if (startIdx > endIdx) {
+                myBuffer.erase(0, endIdx + 1); 
+                continue;
             }
-            else 
-            { 
-                //buffer[NICK_SIZE] = '\0';
-                nick = std::string(buffer, NICK_SIZE);
+
+            nick = myBuffer.substr(startIdx + 1, endIdx - startIdx - 1);
+            myBuffer.erase(0, endIdx + 1); 
+
+            if (nick.length() > NICK_SIZE) {
+                nick = nick.substr(0, NICK_SIZE);
             }
-            
+
             // Nickname was already picked
-            if (std::any_of(players.begin(), players.end(), [&](const auto& pair) { return pair.second == nick; }))
-            {
+            if (std::any_of(players.begin(), players.end(), [&](const auto &pair) { return pair.second == nick; })) {
                 message = "{nu}"; //nickname already in use
                 write(clientFd, message.c_str(), message.size());
-            }
-            else
-            {
-                std::pair<int,std::string> player (clientFd, nick);
-                players.insert(player);
-                std::pair<std::string,int> score (nick, 0);
-                scores.insert(score);
+            } else {
+                players[clientFd] = nick;
+                scores[nick] = 0;
                 message = "{na}"; //nickname accepted
                 write(clientFd, message.c_str(), message.size());
                 message = "{pc:" + nick + "}"; //player connected
@@ -645,43 +655,63 @@ void getNickname(int clientFd, int descr)
                 return;
             }
         }
-        
+
+        if (myBuffer.size() > SIZE) {
+            myBuffer.clear();
+        }
     }
-    
+
 }
 
 // Handles user input during game
 void handleInput(int clientFd)
 {
+    std::string &myBuffer = clientBuffers[clientFd]; 
     char buffer[SIZE];
     memset(buffer, 0, SIZE);
     std::string word;
     int score;
     int r = read(clientFd, buffer, SIZE);
-    buffer[strlen(buffer)-1] = '\0';
-    word = buffer;
+    // buffer[strlen(buffer)-1] = '\0';
 
-    if (checkIfCorrectWord(word))
-    {
-        score = basePoints;
-        // First correct answer this round
-        if (words.empty())
-        {
-            score += bonusPoints;
+    myBuffer.append(buffer, r);
+
+    if (myBuffer.find('{') != std::string::npos && myBuffer.find('}') != std::string::npos) {
+        int startIdx = myBuffer.find_first_of('{');
+        printf("%i\n",startIdx);
+        int endIdx = myBuffer.find_first_of('}');
+        printf("%i\n",endIdx);
+
+        if (startIdx > endIdx) {
+            myBuffer.erase(0, endIdx + 1); 
+            return;
         }
-        words.insert(word);
-    }
-    else
-    {
-        score = negativePoints;
-    }
 
-    scores[players[clientFd]] += score;
-    answers += 1;
-    cv.notify_all();
-    message = "{pa:" + players[clientFd] + "}"; //player answered
-    sendToAllPlaying(message);
-    printf("%s answered: %s\n", players[clientFd].c_str(), word.c_str());
+        word = myBuffer.substr(startIdx + 1, endIdx - startIdx - 1);
+        myBuffer.erase(0, endIdx + 1); 
+
+        if (checkIfCorrectWord(word))
+        {
+            score = basePoints;
+            // First correct answer this round
+            if (words.empty())
+            {
+                score += bonusPoints;
+            }
+            words.insert(word);
+        }
+        else
+        {
+            score = negativePoints;
+        }
+
+        scores[players[clientFd]] += score;
+        answers += 1;
+        cv.notify_all();
+        message = "{pa:" + players[clientFd] + "}"; //player answered
+        sendToAllPlaying(message);
+        printf("%s answered: %s\n", players[clientFd].c_str(), word.c_str());
+    }
 }
 
 // Checks if the word provided by the player is a valid one
