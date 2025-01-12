@@ -56,15 +56,15 @@ std::unordered_set<std::string> inGame;
 std::unordered_set<std::string> words;
 std::unordered_set<std::string> dictionary;
 
-// Those will be put in a configuration file later (hopefully)
-int numOfRounds = 3; // Rounds in a single game
-int basePoints = 10; // Points for correct word
-int bonusPoints = 5; // Bonus for being first
-int negativePoints = -10; // Points for providing incorrect answer
-int waitForPlayersTime = 10; // How long the server waits for more players to join
-int roundTime = 10; // How long one round lasts
-int letterCount = 10; // The number of letters chosen in one round
-std::string dictPath = "../en_US.dic";
+// Those are in a configuration file
+int numOfRounds;// Rounds in a single game
+int basePoints;// Points for correct word
+int bonusPoints;// Bonus for being first
+int negativePoints;// Points for providing incorrect answer
+int waitForPlayersTime;// How long the server waits for more players to join
+int roundTime;// How long one round lasts
+int letterCount;// The number of letters chosen in one round
+std::string dictPath;
 
 short getPort(char * port);
 
@@ -102,6 +102,7 @@ void joinThreads();
 
 void readDictionary(std::string path);
 
+void readConfig(std::string path);
 
 int main(int argc, char* argv[])
 {
@@ -160,6 +161,9 @@ int main(int argc, char* argv[])
     pollFds[1].fd = STDIN_FILENO;
     pollFds[1].events = POLLIN;
     descrCount++;
+
+    // Load config file
+    readConfig("../.env");
 
     // Load the dictionary file
     readDictionary(dictPath);
@@ -786,6 +790,29 @@ void readDictionary(std::string path)
         std::string word = line.substr(0, endOfWord);
         dictionary.insert(word);
     }
+
+    file.close();
+}
+
+void readConfig(std::string path)
+{
+    std::ifstream file(path);
+
+    if (!file.is_open())
+    {
+        perror("Failed to open config file");
+        exit(1);
+    }
+
+    std::string line;
+    std::getline(file, line); numOfRounds = std::stoi(line);
+    std::getline(file, line); basePoints = std::stoi(line);
+    std::getline(file, line); bonusPoints = std::stoi(line);
+    std::getline(file, line); negativePoints = std::stoi(line);
+    std::getline(file, line); waitForPlayersTime = std::stoi(line);
+    std::getline(file, line); roundTime = std::stoi(line);
+    std::getline(file, line); letterCount = std::stoi(line);
+    std::getline(file, line); dictPath = line;
 
     file.close();
 }

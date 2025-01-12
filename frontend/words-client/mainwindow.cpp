@@ -209,7 +209,6 @@ void MainWindow::msgParser(QString &text) {
             ui->plainTextEdit_2->appendPlainText(msg.trimmed());
         }
 
-        // Remove processed message from buffer
         msgBuf.remove(0, endIdx + 1);
     }
 }
