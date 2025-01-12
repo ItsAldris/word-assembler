@@ -66,6 +66,13 @@ void MainWindow::sendBtnHit(){
 
     if (isConnected)
         ui->stackedWidget->setCurrentIndex(1);
+
+    ui->wordLineEdit->clear();
+    ui->lettersLineEdit->clear();
+    ui->lcdNumber->display(10);
+    ui->statsPlainTextEdit->clear();
+    //    ui->wordsGroupBox->setEnabled(false);
+
     ui->plainTextEdit_2->setPlainText("username accepted");
 }
 
@@ -109,9 +116,11 @@ void MainWindow::updateScoreboard() {
     ui->statsPlainTextEdit->clear();
     for (auto score : scores)
 
-    //TODO add colors to players after answer
     {
-        ui->statsPlainTextEdit->appendPlainText(score.first + ": " +QString::number(score.second));
+        QString message = score.first + ": " +QString::number(score.second);
+        if(answered.count(score.first)>0) message = "<p style=\"color:green;white-space:pre\">" + message + "</p>";
+        else message = "<p style=\"color:red;white-space:pre\">" + message + "</p>";
+        ui->statsPlainTextEdit->appendHtml(message);
     }
     return;
 }
@@ -146,13 +155,15 @@ void MainWindow::msgParser(QString &text) {
                 else if (msg[1] == 'd') text += " disconnected!";
                 else if (msg[1] == 'a') {
                     text += " answered!";
-                    //zmiana koloru
+                    answered.insert(args);
+                    updateScoreboard();
                 }
                 ui->plainTextEdit_2->appendPlainText(text);
             }
         } else if (msg[0]=='g') { // Game
             if (msg[1] == 'w') ui->lcdNumber->display(args); //Wait time
             else if (msg[1]== 's') { //Start
+                answered.clear();
                 QStringList plList = args.split(u',', Qt::SkipEmptyParts);
                 for(int i=0; i<plList.length();i++)
                 {
@@ -163,8 +174,10 @@ void MainWindow::msgParser(QString &text) {
                 }
                 updateScoreboard();
                 ui->plainTextEdit_2->appendPlainText("Ready... Go!");
+                ui->wordsGroupBox->setEnabled(false);
             }
             else if (msg[1] == 'e') {
+                ui->lettersLineEdit->clear();
                 ui->statsPlainTextEdit->setPlainText("Game ended! Top players:");
                 ui->statsPlainTextEdit->appendPlainText(args);
                 ui->statsPlainTextEdit->appendPlainText("Congratulations!");
@@ -172,6 +185,7 @@ void MainWindow::msgParser(QString &text) {
         } else if (msg[0]=='r') { // Round
             if (msg[1] == 'w') ui->lcdNumber->display(args); //Wait time
             else if (msg[1] == 'e') { //Ended
+                answered.clear();
                 QStringList plList = args.split(u',', Qt::SkipEmptyParts);
                 for(int i=0; i<plList.length();i++)
                 {
@@ -183,12 +197,12 @@ void MainWindow::msgParser(QString &text) {
                 updateScoreboard();
             }
             else if (msg[1] == 's') {
-
-
-/* Update round number */ } //Start
+                /* Update round number */
+            } //Start
         } else if (msg[0]=='l') { // Letters
             if (msg[1] == 'l') {
                 ui->lettersLineEdit->setText(args); //List
+                ui->wordsGroupBox->setEnabled(true);
             }
         } else {
             ui->plainTextEdit_2->appendPlainText(msg.trimmed());
@@ -215,6 +229,7 @@ void MainWindow::submitBtnHit(){
     sock->write((txt+'\n').toUtf8());
     ui->plainTextEdit_2->appendPlainText("waiting for server response...");
     ui->wordLineEdit->clear();
+    ui->wordsGroupBox->setEnabled(false);
 }
 
 

@@ -9,6 +9,7 @@
 #include <QLCDNumber>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <set>
 
 //#include <QTcpSocket>
 #include "qtcpsocket.h"
@@ -62,6 +63,7 @@ private:
     void msgParser(QString &text);
 //    void switchToPage(int pageIndex);
     std::unordered_map<QString,int> scores;
+    std::set<QString> answered;
     void updateScoreboard();
 
     // przyciski
