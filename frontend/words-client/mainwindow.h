@@ -61,6 +61,8 @@ private:
     QString msgBuf;
     void msgParser(QString &text);
 //    void switchToPage(int pageIndex);
+    std::unordered_map<QString,int> scores;
+    void updateScoreboard();
 
     // przyciski
     void connectBtnHit();
