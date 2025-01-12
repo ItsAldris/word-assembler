@@ -36,9 +36,8 @@ MainWindow::~MainWindow()
 // 1 strona
 
 void MainWindow::connectBtnHit(){
+    if(isConnected) return;
     ui->plainTextEdit->appendPlainText("connecting...");
-//    if(sock)
-//        delete sock;
     sock = new QTcpSocket(this);
     connect(sock, &QTcpSocket::connected, this, &MainWindow::socketConnected);
     connect(sock, &QTcpSocket::disconnected, this, &MainWindow::socketDisconnected);
@@ -65,8 +64,8 @@ void MainWindow::sendBtnHit(){
 
     if(txt.isEmpty())
         return;
-    //    sock->write(("{"+txt+"}").toUtf8());
-    sock->write((txt+'\n').toUtf8());
+    sock->write(("{"+txt+"}").toUtf8());
+//    sock->write((txt+'\n').toUtf8());
     ui->plainTextEdit->appendPlainText("waiting for server response...");
 }
 
@@ -191,9 +190,6 @@ void MainWindow::msgParser(QString &text) {
                 }
                 updateScoreboard();
             }
-            else if (msg[1] == 's') {
-                /* Update round number */
-            } //Start
         } else if (msg[0]=='l') { // Letters
             if (msg[1] == 'l') {
                 ui->lettersLineEdit->setText(args); //List
@@ -244,8 +240,8 @@ void MainWindow::submitBtnHit(){
     if(txt.isEmpty())
         return;
 
-//    sock->write(("{"+txt+"}").toUtf8());
-    sock->write((txt+'\n').toUtf8());
+    sock->write(("{"+txt+"}").toUtf8());
+//    sock->write((txt+'\n').toUtf8());
     ui->plainTextEdit_2->appendPlainText("waiting for server response...");
     ui->wordLineEdit->clear();
     ui->wordsGroupBox->setEnabled(false);
