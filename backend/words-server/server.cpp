@@ -307,7 +307,7 @@ void gameLoop()
             }
             sendToAll("}");
             // Show correct answers after the round ends
-            message = "{Correct words from this round";
+            message = "{Correct words from this round\n";
             sendToAll(message);
             for (std::string word : words)
             {
