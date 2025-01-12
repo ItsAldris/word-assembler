@@ -27,7 +27,8 @@
 
 // Quit program with q+enter (ctrl+c should work too)
 
-#define SIZE 255 // buffer size
+#define SIZE 1024 // buffer size
+#define NICK_SIZE 20 // max nick length
 
 int serverFd;
 int maxDescrCount = 16;
@@ -532,7 +533,7 @@ void handleServerEvent(int revents)
         printf("New player connected: %s on port %d\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
         // Get nickname from player
-        threads.emplace_back(getNickname, clientFd, descrCount-1);
+        //threads.emplace_back(getNickname, clientFd, descrCount-1);
     }
     else
     {
@@ -558,6 +559,21 @@ void handleClientEvent(int clientId)
         {
             handleInput(clientFd);
         }
+        // Player not yet registered -> receive nickname
+        else if (players.find(clientFd) == players.end())
+        {
+            getNickname(clientFd, clientId);
+        }
+        else
+        {
+            // Ignore
+            char buffer[SIZE];            
+            int received = recv(clientFd, buffer, SIZE, MSG_DONTWAIT);
+            if (received == 0)
+            {
+                removeClient(clientFd);
+            }
+        }
     }
 }
 
@@ -580,10 +596,20 @@ void getNickname(int clientFd, int descr)
         {
             return;
         }
-        buffer[strlen(buffer)-1] = '\0';
-        if (r > 0)
+        //buffer[strlen(buffer)-1] = '\0';
+        else
         {
-            nick = buffer;
+            if (r <= NICK_SIZE) 
+            { 
+                //buffer[r-1] = '\0';
+                nick = std::string(buffer, r-1);
+            }
+            else 
+            { 
+                //buffer[NICK_SIZE] = '\0';
+                nick = std::string(buffer, NICK_SIZE);
+            }
+            
             // Nickname was already picked
             if (std::any_of(players.begin(), players.end(), [&](const auto& pair) { return pair.second == nick; }))
             {
