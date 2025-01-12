@@ -9,6 +9,7 @@
 #include <QLCDNumber>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <set>
 
 //#include <QTcpSocket>
 #include "qtcpsocket.h"
@@ -58,7 +59,14 @@ private:
     QStackedWidget *stackedWidget;
 
     // pomocnicze
+    QString msgBuf;
+    void msgParser(QString &text);
 //    void switchToPage(int pageIndex);
+    std::unordered_map<QString,int> scores;
+    std::set<QString> answered;
+    void updateScoreboard();
+    void usernameAccepted();
+    QRegularExpression exp = QRegularExpression("[\\[\\]{}:,'\"]");
 
     // przyciski
     void connectBtnHit();
