@@ -56,24 +56,18 @@ void MainWindow::sendBtnHit(){
         connectBtnHit();
         return;
     }
-    auto txt = ui->usernameLineEdit->text().trimmed();
+    QString txt = ui->usernameLineEdit->text().trimmed();
+
+    if (txt.contains(exp)) {
+        ui->plainTextEdit->appendPlainText("This nickname has some forbidden characters, like []{}:,' or \". Please try something else.");
+        return;
+    }
+
     if(txt.isEmpty())
         return;
+    //    sock->write(("{"+txt+"}").toUtf8());
     sock->write((txt+'\n').toUtf8());
     ui->plainTextEdit->appendPlainText("waiting for server response...");
-
-    //TODO check if username is accepted
-
-    if (isConnected)
-        ui->stackedWidget->setCurrentIndex(1);
-
-    ui->wordLineEdit->clear();
-    ui->lettersLineEdit->clear();
-    ui->lcdNumber->display(10);
-    ui->statsPlainTextEdit->clear();
-    //    ui->wordsGroupBox->setEnabled(false);
-
-    ui->plainTextEdit_2->setPlainText("username accepted");
 }
 
 void MainWindow::disconnectBtnHit(){
@@ -163,6 +157,7 @@ void MainWindow::msgParser(QString &text) {
         } else if (msg[0]=='g') { // Game
             if (msg[1] == 'w') ui->lcdNumber->display(args); //Wait time
             else if (msg[1]== 's') { //Start
+                scores.clear();
                 answered.clear();
                 QStringList plList = args.split(u',', Qt::SkipEmptyParts);
                 for(int i=0; i<plList.length();i++)
@@ -204,6 +199,12 @@ void MainWindow::msgParser(QString &text) {
                 ui->lettersLineEdit->setText(args); //List
                 ui->wordsGroupBox->setEnabled(true);
             }
+        } else if (msg[0]=='n'){ //Nick
+            if(msg[1]=='a'){
+                usernameAccepted();
+            } else if (msg[1]=='u'){
+                ui->plainTextEdit->appendPlainText("This nickname is already in use. Please try something else.");
+            }
         } else {
             ui->plainTextEdit_2->appendPlainText(msg.trimmed());
         }
@@ -213,6 +214,17 @@ void MainWindow::msgParser(QString &text) {
     }
 }
 
+void MainWindow::usernameAccepted(){
+    if (isConnected)
+        ui->stackedWidget->setCurrentIndex(1);
+
+    ui->wordLineEdit->clear();
+    ui->lettersLineEdit->clear();
+    ui->lcdNumber->display(10);
+    ui->statsPlainTextEdit->clear();
+    //    ui->wordsGroupBox->setEnabled(false);
+    ui->plainTextEdit_2->setPlainText("Username accepted");
+}
 
 // 2 strona
 
@@ -224,8 +236,16 @@ void MainWindow::submitBtnHit(){
         return;
     }
     auto txt = ui->wordLineEdit->text().trimmed();
+
+    if (txt.contains(exp)) {
+        ui->plainTextEdit->appendPlainText("This nickname has some forbidden characters, like []{}:,' or \". Please try something else.");
+        return;
+    }
+
     if(txt.isEmpty())
         return;
+
+//    sock->write(("{"+txt+"}").toUtf8());
     sock->write((txt+'\n').toUtf8());
     ui->plainTextEdit_2->appendPlainText("waiting for server response...");
     ui->wordLineEdit->clear();

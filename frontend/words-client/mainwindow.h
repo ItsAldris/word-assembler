@@ -65,6 +65,8 @@ private:
     std::unordered_map<QString,int> scores;
     std::set<QString> answered;
     void updateScoreboard();
+    void usernameAccepted();
+    QRegularExpression exp = QRegularExpression("[\\[\\]{}:,'\"]");
 
     // przyciski
     void connectBtnHit();

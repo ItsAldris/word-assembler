@@ -578,7 +578,7 @@ void getNickname(int clientFd)
             // Nickname was already picked
             if (std::any_of(players.begin(), players.end(), [&](const auto& pair) { return pair.second == nick; }))
             {
-                message = "Provided nickname is already in use. Try again.\n";
+                message = "{nu}"; //nickname already in use
                 write(clientFd, message.c_str(), message.size());
             }
             else
@@ -587,6 +587,8 @@ void getNickname(int clientFd)
                 players.insert(player);
                 std::pair<std::string,int> score (nick, 0);
                 scores.insert(score);
+                message = "{na}"; //nickname accepted
+                write(clientFd, message.c_str(), message.size());
                 message = "{pc:" + nick + "}";
                 sendToAll(message);
                 printf("%s\n", message.c_str());
