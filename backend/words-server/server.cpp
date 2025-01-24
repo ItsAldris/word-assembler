@@ -64,7 +64,7 @@ int negativePoints = -10; // Points for providing incorrect answer
 int waitForPlayersTime = 10; // How long the server waits for more players to join
 int roundTime = 10; // How long one round lasts
 int letterCount = 10; // The number of letters chosen in one round
-std::string dictPath = "en_US.dic";
+std::string dictPath = "../en_US.dic";
 
 short getPort(char * port);
 
@@ -273,6 +273,7 @@ void gameLoop()
         sendToAll(message);
         printf("%s\n", message.c_str());
         // Add all players to the game
+        std::unique_lock<std::mutex> lock(mtx);
         for (auto player : players)
         {
             std::pair<int,std::string> pl (player.first, player.second);
@@ -281,6 +282,7 @@ void gameLoop()
             sendToAll(message);
             printf("%s\n", message.c_str());
         }
+        lock.unlock();
 
         // Start the game
         isGameRunning = true;
@@ -536,6 +538,8 @@ void handleClientEvent(int clientId)
 {
     int clientFd = pollFds[clientId].fd;
     int revents = pollFds[clientId].revents;
+
+    
     
     if (revents & POLLRDHUP)
     {
@@ -547,16 +551,25 @@ void handleClientEvent(int clientId)
         // Player sent a word during current round
         if (isRoundRunning && inGame.find(players[clientFd]) != inGame.end())
         {
+            printf("dupa player input\n");
             handleInput(clientFd);
         }
         // Player not yet registered -> receive nickname
-        else if (players.find(clientFd) == players.end())
+        else if (players.find(clientFd) == players.end() || players[clientFd] == "")
         {
+            printf("dupa nickname\n");
             getNickname(clientFd, clientId);
+            for (auto p : players)
+            {
+                printf("Player: %d Nick: %s\n", p.first, p.second.c_str());
+            }
+            //threads.emplace_back(getNickname, clientFd, descrCount-1);
+            //std::thread(getNickname, clientFd, descrCount-1).detach();
         }
         else
         {
             // Ignore
+            printf("dupa ignoring\n");
             char buffer[SIZE];            
             int received = recv(clientFd, buffer, SIZE, MSG_DONTWAIT);
             if (received == 0)
@@ -589,6 +602,7 @@ void getNickname(int clientFd, int descr)
         //buffer[strlen(buffer)-1] = '\0';
         else
         {
+            std::unique_lock<std::mutex> lock(mtx);
             if (r <= NICK_SIZE) 
             { 
                 //buffer[r-1] = '\0';
@@ -608,11 +622,13 @@ void getNickname(int clientFd, int descr)
             }
             else
             {
-                std::pair<int,std::string> player (clientFd, nick);
-                players.insert(player);
-                std::pair<std::string,int> score (nick, 0);
-                scores.insert(score);
-                message = nick + " connected";
+                // std::pair<int,std::string> player (clientFd, nick);
+                // players.insert(player);
+                // std::pair<std::string,int> score (nick, 0);
+                // scores.insert(score);
+                players[clientFd] = nick;
+                scores[nick] = 0;
+                message = players[clientFd] + " connected";
                 sendToAll(message);
                 printf("%s\n", message.c_str());
                 cv.notify_all();
@@ -626,6 +642,7 @@ void getNickname(int clientFd, int descr)
                     message = "Waiting for the game to start...\n";
                 }
                 write(clientFd, message.c_str(), message.size());
+                lock.unlock();
                 return;
             }
         }
