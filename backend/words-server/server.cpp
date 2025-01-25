@@ -563,18 +563,30 @@ void handleClientEvent(int clientId)
     }
     else if (revents & POLLIN)
     {
+        // for (auto p : players)
+        // {
+        //     printf("Player: %d Nick: %s\n", p.first, p.second.c_str());
+        // }
         // Player sent a word during current round
         if (isRoundRunning && inGame.find(players[clientFd]) != inGame.end())
         {
+            //printf("dupa handle input\n");
             handleInput(clientFd);
         }
         // Player not yet registered -> receive nickname
-        else if (players.find(clientFd) == players.end())
+        else if (players.find(clientFd) == players.end() || players[clientFd] == "")
         {
+            //printf("dupa nickname\n");
             getNickname(clientFd, clientId);
+            // Debug
+            // for (auto p : players)
+            // {
+            //     printf("After: %d Nick: %s\n", p.first, p.second.c_str());
+            // }
         }
         else
         {
+            //printf("dupa ignoring\n");
             // Ignore
             char buffer[SIZE];            
             int received = recv(clientFd, buffer, SIZE, MSG_DONTWAIT);
@@ -636,6 +648,9 @@ void getNickname(int clientFd, int descr) {
             } else {
                 players[clientFd] = nick;
                 scores[nick] = 0;
+
+                printf("Nick: %s\n", nick.c_str());
+
                 message = "{na}"; //nickname accepted
                 write(clientFd, message.c_str(), message.size());
                 message = "{pc:" + nick + "}"; //player connected
